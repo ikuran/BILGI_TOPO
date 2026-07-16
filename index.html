@@ -1,0 +1,3299 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GH_TOP — kıyı arazisi / massing</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    /* Batimetrik harita paleti: soğuk su, sıcak kara */
+    --void:    #060b12;
+    --panel:   #0a121c;
+    --deep:    #0a2230;
+    --sea:     #0f4b5e;
+    --foam:    #7fe9d8;   /* kıyı çizgisi + kütle kenarı */
+    --sun:     #ffc061;
+    --wind:    #8fd3ff;
+    --mass:    #ecead1;
+    --ink:     #dfe7ee;
+    --dim:     #7d93a4;
+    --rule:    #1d2f3f;
+    --rule-hi: #2c4459;
+    --warn:    #ffb454;
+    --disp: "Barlow Condensed", "Helvetica Neue", Arial, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{
+    font-family:var(--disp);color:var(--ink);background:var(--void);
+    display:flex;overflow:hidden;
+  }
+
+  /* ============ Viewport ============ */
+  #stage{flex:1;position:relative;min-width:0;background:
+    radial-gradient(130% 100% at 50% 0%, #16283a 0%, #0a1420 55%, #05090f 100%);}
+  #stage canvas{display:block;position:absolute;inset:0;width:100%;height:100%}
+  #labels{pointer-events:none;z-index:2}
+
+  #hud{
+    position:absolute;left:16px;top:14px;z-index:3;pointer-events:none;
+    font:600 9.5px/1.6 var(--mono);letter-spacing:.2em;text-transform:uppercase;color:var(--dim);
+  }
+  #hud b{
+    display:block;font-family:var(--disp);font-size:19px;font-weight:600;
+    letter-spacing:.06em;color:var(--ink);text-transform:uppercase;
+  }
+  #readout{
+    position:absolute;right:14px;bottom:12px;z-index:3;pointer-events:none;
+    font:400 10px/1.8 var(--mono);color:var(--dim);text-align:right;
+  }
+  #readout em{font-style:normal;color:var(--foam);font-weight:500}
+  #readout .w{color:var(--warn)}
+
+  /* --- imza: güneş + rüzgar + kıyı kadranı --- */
+  #dial{position:absolute;left:14px;bottom:12px;z-index:3;width:132px;height:132px;pointer-events:none}
+  #dial text{font-family:var(--mono);font-size:8px;letter-spacing:.1em;fill:var(--dim)}
+  #dial .n{fill:var(--ink);font-weight:600}
+
+  #tip{
+    position:absolute;left:50%;top:14px;transform:translateX(-50%);z-index:3;
+    font:400 10px/1 var(--mono);letter-spacing:.08em;color:var(--dim);
+    background:rgba(6,11,18,.78);border:1px solid var(--rule);
+    padding:6px 10px;border-radius:2px;pointer-events:none;
+    transition:opacity .3s;
+  }
+
+  /* ============ Panel ============ */
+  #panel{
+    width:352px;flex:0 0 352px;background:var(--panel);
+    border-left:1px solid var(--rule);overflow-y:auto;padding:16px 15px 40px;
+  }
+  #panel::-webkit-scrollbar{width:9px}
+  #panel::-webkit-scrollbar-thumb{background:var(--rule);border-radius:9px}
+
+  .head{margin:2px 2px 18px}
+  .head h1{margin:0;font-size:19px;font-weight:600;letter-spacing:.05em;text-transform:uppercase}
+  .head p{margin:6px 0 0;font-size:12.5px;line-height:1.5;color:var(--dim)}
+
+  .group{
+    position:relative;border:1px solid var(--rule);border-radius:3px;
+    padding:19px 10px 10px;margin-bottom:14px;background:rgba(255,255,255,.012);
+  }
+  .group > .tag{
+    position:absolute;top:-7px;left:8px;background:var(--panel);padding:0 6px;
+    font:600 9px/1 var(--mono);letter-spacing:.22em;text-transform:uppercase;color:var(--foam);
+  }
+  .group > .tag i{font-style:normal;color:var(--dim);letter-spacing:.14em}
+
+  .sl{display:flex;align-items:center;gap:6px;margin:0 0 5px}
+  .sl:last-child{margin-bottom:0}
+  .sl .nick{
+    flex:0 0 88px;font:500 11px/1 var(--disp);letter-spacing:.06em;text-transform:uppercase;
+    color:var(--dim);text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  .sl .track{flex:1;min-width:0;height:22px}
+  .sl input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:22px;margin:0;background:transparent;cursor:ew-resize}
+  .sl input[type=range]::-webkit-slider-runnable-track{height:2px;margin-top:10px;background:var(--rule-hi)}
+  .sl input[type=range]::-moz-range-track{height:2px;background:var(--rule-hi)}
+  .sl input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none;appearance:none;width:3px;height:16px;margin-top:-7px;
+    background:var(--foam);border:0;box-shadow:0 0 6px rgba(127,233,216,.55);
+  }
+  .sl input[type=range]::-moz-range-thumb{width:3px;height:16px;background:var(--foam);border:0;border-radius:0}
+  .sl input[type=range]:focus-visible{outline:1px solid var(--foam);outline-offset:2px}
+  .sl.sun input[type=range]::-webkit-slider-thumb{background:var(--sun);box-shadow:0 0 6px rgba(255,192,97,.55)}
+  .sl.sun input[type=range]::-moz-range-thumb{background:var(--sun)}
+  .sl.wind input[type=range]::-webkit-slider-thumb{background:var(--wind);box-shadow:0 0 6px rgba(143,211,255,.55)}
+  .sl.wind input[type=range]::-moz-range-thumb{background:var(--wind)}
+  .sl .val{
+    flex:0 0 52px;font:500 10.5px/1 var(--mono);color:var(--ink);
+    text-align:right;
+  }
+
+  .pnl{margin:0 0 7px}
+  .pnl label{display:block;font:500 9.5px/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--dim);margin:0 0 5px 1px}
+  .pnl input[type=text]{
+    width:100%;font:400 11.5px/1.4 var(--mono);color:var(--foam);
+    background:rgba(127,233,216,.05);border:1px solid var(--rule-hi);border-radius:2px;padding:7px 8px;
+  }
+  .pnl input[type=text]:focus{outline:1px solid var(--foam);outline-offset:-1px}
+
+  .tog{display:flex;align-items:center;gap:8px;margin:0 0 5px;font-size:12.5px;color:var(--ink)}
+  .tog:last-child{margin-bottom:0}
+  .tog input{
+    appearance:none;-webkit-appearance:none;width:13px;height:13px;flex:0 0 13px;margin:0;
+    border:1px solid var(--rule-hi);background:transparent;cursor:pointer;position:relative;border-radius:1px;
+  }
+  .tog input:checked{background:var(--foam);border-color:var(--foam)}
+  .tog input:checked::after{content:"";position:absolute;left:3.5px;top:.5px;width:3px;height:7px;border:solid #06121a;border-width:0 2px 2px 0;transform:rotate(42deg)}
+  .tog input:focus-visible{outline:1px solid var(--foam);outline-offset:2px}
+  .tog label{cursor:pointer;user-select:none;letter-spacing:.03em}
+  .tog .sw{width:16px;height:3px;flex:0 0 16px;border-radius:2px}
+
+  .note{font-size:11.5px;line-height:1.55;color:var(--dim);margin:7px 1px 0;letter-spacing:.01em}
+  .note b{color:var(--ink);font-weight:600}
+  .note.warn{color:var(--warn)}
+  .note.warn b{color:var(--warn)}
+  .note code{font-family:var(--mono);font-size:10.5px;color:var(--foam)}
+
+  .btn{
+    flex:1;font:500 10.5px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;
+    color:var(--ink);background:rgba(255,255,255,.03);border:1px solid var(--rule-hi);
+    border-radius:2px;padding:8px 6px;cursor:pointer;
+  }
+  .btn:hover{background:rgba(127,233,216,.1);border-color:var(--foam);color:var(--foam)}
+  .btn:active{background:rgba(127,233,216,.2)}
+  .btn[disabled]{opacity:.32;cursor:default}
+  .btn[disabled]:hover{background:rgba(255,255,255,.03);border-color:var(--rule-hi);color:var(--ink)}
+  .row{display:flex;gap:6px;margin-top:7px}
+
+  .sel{
+    font:400 11px/1.6 var(--mono);color:var(--dim);
+    border-bottom:1px solid var(--rule);padding-bottom:8px;margin-bottom:9px;
+  }
+  .sel em{font-style:normal;color:var(--foam)}
+  .sel .big{font-size:15px;font-weight:600;color:var(--ink)}
+
+  /* --- analiz --- */
+  select{
+    width:100%;font:400 11.5px/1.3 var(--mono);color:var(--foam);
+    background:rgba(127,233,216,.05);border:1px solid var(--rule-hi);border-radius:2px;
+    padding:7px 8px;cursor:pointer;appearance:none;-webkit-appearance:none;
+    background-image:linear-gradient(45deg,transparent 50%,var(--dim) 50%),
+                     linear-gradient(135deg,var(--dim) 50%,transparent 50%);
+    background-position:calc(100% - 15px) 13px, calc(100% - 10px) 13px;
+    background-size:5px 5px,5px 5px;background-repeat:no-repeat;
+  }
+  select:focus{outline:1px solid var(--foam);outline-offset:-1px}
+  select option{background:#0a121c;color:var(--ink)}
+
+  .tot{
+    display:grid;grid-template-columns:1fr 1fr;gap:1px;
+    background:var(--rule);border:1px solid var(--rule);margin:9px 0 8px;
+  }
+  .tot div{background:var(--panel);padding:7px 8px}
+  .tot span{display:block;font:500 8.5px/1.4 var(--mono);letter-spacing:.14em;
+            text-transform:uppercase;color:var(--dim)}
+  .tot b{font:600 15px/1.3 var(--mono);color:var(--ink)}
+  .tot b i{font-style:normal;font-size:9px;color:var(--dim);font-weight:400}
+
+  .mt{width:100%;border-collapse:collapse;font:400 10.5px/1 var(--mono);margin-top:2px}
+  .mt th{
+    font:500 8.5px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;
+    color:var(--dim);text-align:right;padding:0 4px 6px;font-weight:500;
+  }
+  .mt th:first-child{text-align:left}
+  .mt td{padding:5px 4px;text-align:right;color:var(--ink);border-top:1px solid var(--rule)}
+  .mt td:first-child{text-align:left;color:var(--foam)}
+  .mt tr{cursor:pointer}
+  .mt tr:hover td{background:rgba(127,233,216,.07)}
+  .mt tr.on td{background:rgba(255,192,97,.13)}
+  .mt .flag{color:var(--warn)}
+  .mt .empty{color:var(--dim);text-align:center;padding:12px 0;border-top:1px solid var(--rule)}
+
+  #legend{
+    position:absolute;right:14px;top:14px;z-index:3;pointer-events:none;
+    background:rgba(6,11,18,.8);border:1px solid var(--rule);border-radius:2px;
+    padding:9px 11px;display:none;min-width:118px;
+  }
+  #legend.on{display:block}  #legend h4{
+    margin:0 0 7px;font:500 8.5px/1 var(--mono);letter-spacing:.14em;
+    text-transform:uppercase;color:var(--dim);font-weight:500;
+  }
+
+  /* --- çizim önizleme --- */
+  /* --- ölümcül hata kutusu: sayfa sessizce siyah kalmasın --- */
+  #fatal{
+    position:fixed;inset:0;z-index:99;display:none;
+    background:#0a121c;color:#dfe7ee;
+    padding:min(8vw,60px);overflow:auto;
+    font:400 14px/1.7 var(--mono);
+  }
+  #fatal.on{display:block}
+  #fatal h2{margin:0 0 14px;font:600 20px/1.3 var(--disp);letter-spacing:.05em;
+            text-transform:uppercase;color:#ffb454}
+  #fatal p{margin:0 0 10px;max-width:70ch;color:#a8bccb}
+  #fatal pre{margin:14px 0;padding:12px;background:rgba(255,255,255,.04);
+             border:1px solid #24384a;border-radius:2px;overflow:auto;
+             font-size:12px;color:#8fd3ff;white-space:pre-wrap}
+  #fatal b{color:#7fe9d8}
+
+  #sheet{
+    position:fixed;inset:0;z-index:50;display:none;
+    background:rgba(4,8,13,.94);
+    flex-direction:column;padding:12px;
+  }
+  #sheet.on{display:flex}
+  .sheet-bar{
+    display:flex;align-items:center;gap:8px;margin-bottom:10px;flex:0 0 auto;
+  }
+  .sheet-bar span:first-child{
+    font:400 11px/1.4 var(--mono);color:var(--dim);letter-spacing:.05em;
+  }
+  .sheet-bar span:first-child em{font-style:normal;color:var(--foam);font-weight:500}
+  .sheet-bar .btn{flex:0 0 auto;width:auto;padding:8px 14px}
+  .sheet-wrap{
+    flex:1;min-height:0;display:flex;align-items:center;justify-content:center;overflow:auto;
+  }
+  #sheet_c{
+    background:#fff;box-shadow:0 8px 40px rgba(0,0,0,.6);
+    max-width:100%;max-height:100%;object-fit:contain;
+  }
+  #legend .lr{display:flex;align-items:center;gap:7px;margin-bottom:4px;
+              font:400 10px/1 var(--mono);color:var(--ink)}
+  #legend .lr:last-child{margin-bottom:0}
+  #legend .lc{width:11px;height:11px;flex:0 0 11px;border-radius:1px}
+
+  @media (max-width:900px){
+    body{flex-direction:column;overflow:auto}
+    #stage{height:58vh;flex:0 0 58vh}
+    #panel{width:100%;flex:1 1 auto;border-left:0;border-top:1px solid var(--rule)}
+    #dial{width:104px;height:104px}
+  }
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+
+<div id="stage">
+  <canvas id="labels"></canvas>
+  <div id="hud">
+    <b>Kıyı arazisi</b>
+    GH_TOP.gh · massing etüdü
+  </div>
+  <div id="tip">Bir grid noktasına tıkla → kotunu değiştir veya kütle koy</div>
+  <svg id="dial" viewBox="0 0 132 132"></svg>
+  <div id="legend"></div>
+  <div id="readout"></div>
+</div>
+
+<div id="fatal"></div>
+
+<div id="sheet">
+  <div class="sheet-bar">
+    <span id="sheet_info">—</span>
+    <span style="flex:1"></span>
+    <button class="btn" id="sheet_dl">PNG indir</button>
+    <button class="btn" id="sheet_close">Kapat</button>
+  </div>
+  <div class="sheet-wrap"><canvas id="sheet_c"></canvas></div>
+</div>
+
+<aside id="panel">
+  <div class="head">
+    <h1>Arazi + Massing</h1>
+    <p>Topoğrafya hâlâ tanımdaki zincir. Üstüne deniz, kıyı, ağaçlar,
+       güneş ve hakim rüzgar eklendi. Kütleleri grid noktalarına oturt,
+       oturmadıysa noktanın kotunu oynat.</p>
+  </div>
+
+  <section class="group">
+    <span class="tag">Arazi <i>· Rectangular</i></span>
+    <div class="sl"><span class="nick">Size X / Y</span>
+      <span class="track"><input type="range" id="sz" min="1" max="10" step="0.001" value="5"></span>
+      <span class="val" id="sz_v">5.000</span></div>
+    <div class="sl"><span class="nick">Extent X / Y</span>
+      <span class="track"><input type="range" id="ex" min="4" max="40" step="1" value="10"></span>
+      <span class="val" id="ex_v">10</span></div>
+    <p class="note" id="sitenote"></p>
+  </section>
+
+  <section class="group">
+    <span class="tag">Topoğrafya <i>· Random → Move</i></span>
+    <div class="sl"><span class="nick">Domain end</span>
+      <span class="track"><input type="range" id="dom" min="0" max="10" step="0.001" value="10"></span>
+      <span class="val" id="dom_v">10.000</span></div>
+    <div class="sl"><span class="nick">Number</span>
+      <span class="track"><input type="range" id="num" min="0" max="1000" step="1" value="121"></span>
+      <span class="val" id="num_v">121</span></div>
+    <div class="sl"><span class="nick">Seed</span>
+      <span class="track"><input type="range" id="seed" min="0" max="100" step="1" value="57"></span>
+      <span class="val" id="seed_v">57</span></div>
+    <div class="sl"><span class="nick">Pürüz</span>
+      <span class="track"><input type="range" id="smooth" min="0" max="1" step="0.01" value="0.45"></span>
+      <span class="val" id="smooth_v">0.45</span></div>
+    <p class="note" id="numwarn"></p>
+  </section>
+
+  <section class="group">
+    <span class="tag">Kıyı <i>· deniz</i></span>
+    <div class="sl"><span class="nick">Deniz yönü</span>
+      <span class="track"><input type="range" id="sea_dir" min="0" max="359" step="1" value="225"></span>
+      <span class="val" id="sea_dir_v">225</span></div>
+    <div class="sl"><span class="nick">Kıyı eğimi</span>
+      <span class="track"><input type="range" id="slope" min="0" max="30" step="0.1" value="11"></span>
+      <span class="val" id="slope_v">11.0</span></div>
+    <div class="sl"><span class="nick">Deniz kotu</span>
+      <span class="track"><input type="range" id="sea_lvl" min="-15" max="15" step="0.1" value="0"></span>
+      <span class="val" id="sea_lvl_v">0.0</span></div>
+    <p class="note">Arazi, deniz yönüne doğru <b>Kıyı eğimi</b> kadar alçalıyor;
+       rastgele topoğrafya bunun üstüne biniyor. Kıyı çizgisi denizin kotu ile
+       arazinin kesiştiği yer.</p>
+  </section>
+
+  <section class="group">
+    <span class="tag">Yüzey <i>· Surface From Points</i></span>
+    <div class="sl"><span class="nick">U Count</span>
+      <span class="track"><input type="range" id="uc" min="2" max="41" step="1" value="11"></span>
+      <span class="val" id="uc_v">11</span></div>
+    <div class="sl"><span class="nick">Kontur</span>
+      <span class="track"><input type="range" id="ci" min="0.5" max="10" step="0.5" value="2"></span>
+      <span class="val" id="ci_v">2.0</span></div>
+    <p class="note" id="ucwarn"></p>
+  </section>
+
+  <section class="group">
+    <span class="tag">Güneş + Rüzgar</span>
+    <div class="sl sun"><span class="nick">Güneş azimut</span>
+      <span class="track"><input type="range" id="sun_az" min="0" max="359" step="1" value="152"></span>
+      <span class="val" id="sun_az_v">152</span></div>
+    <div class="sl sun"><span class="nick">Güneş yük.</span>
+      <span class="track"><input type="range" id="sun_alt" min="4" max="88" step="1" value="38"></span>
+      <span class="val" id="sun_alt_v">38</span></div>
+    <div class="sl wind"><span class="nick">Rüzgar yönü</span>
+      <span class="track"><input type="range" id="wind_dir" min="0" max="359" step="1" value="45"></span>
+      <span class="val" id="wind_dir_v">45</span></div>
+    <p class="note">Kuzey <b>+Y</b>. Azimut kuzeyden saat yönünde. Rüzgar yönü,
+       rüzgarın <b>geldiği</b> yön — meteoroloji kuralı. Gölgeler gerçek,
+       kütle aralarına düşeni okuyabilirsiniz.</p>
+  </section>
+
+  <section class="group">
+    <span class="tag">Ağaçlar</span>
+    <div class="pnl"><label>Panel · Index</label>
+      <input type="text" id="tree_idx" value="12, 23, 34, 45, 56, 67, 78, 89"></div>
+    <div class="sl"><span class="nick">Ağaç boyu</span>
+      <span class="track"><input type="range" id="tree_h" min="1" max="14" step="0.1" value="5"></span>
+      <span class="val" id="tree_h_v">5.0</span></div>
+    <p class="note">Kütlelerle aynı mantık: grid noktası indisleri. Noktaya tıkla →
+       <b>Ağaç dik</b>. Boyları seed'e bağlı rastgele değişiyor, hepsi aynı olmasın.
+       Su altındaki noktalara dikilmez.</p>
+  </section>
+
+  <section class="group">
+    <span class="tag">Kütleler <i>· List Item → Center Box</i></span>
+    <div class="pnl"><label>Panel · Index</label>
+      <input type="text" id="idx" value="4, 183, 96, 37"></div>
+    <div class="pnl"><label>Panel · X / Y / Z</label>
+      <input type="text" id="siz" value="1, 3, 4, 2"></div>
+    <div class="pnl"><label>Panel · Z ofset — <span style="color:var(--warn)">− gömülü · + havada</span></label>
+      <input type="text" id="mz" value="0, 0, 0, 0"></div>
+    <p class="note">Tek sayı = küp. Farklı bina için <code>x/y/z</code> yaz:
+       <code>2/3/9</code> gibi. Center Box gibi bunlar <b>yarı</b> ölçü,
+       kenar iki katı. Z ofset <b>0</b> ise kütle yüzeyin gerçek kotuna oturur;
+       eksi değer araziye gömer, artı değer havaya kaldırır.</p>
+  </section>
+
+  <section class="group">
+    <span class="tag">Analiz <i>· massing</i></span>
+    <div class="sl"><span class="nick">Kat yüksekliği</span>
+      <span class="track"><input type="range" id="fh" min="2" max="6" step="0.1" value="3"></span>
+      <span class="val" id="fh_v">3.0</span></div>
+    <div class="pnl" style="margin-top:8px"><label>Kütleleri renklendir</label>
+      <select id="metric">
+        <option value="none">yok — beyaz maket</option>
+        <option value="floors">kat sayısı</option>
+        <option value="gfa">inşaat alanı</option>
+        <option value="view">deniz manzarası</option>
+        <option value="sun">güneşlenme</option>
+        <option value="wind">rüzgar maruziyeti</option>
+        <option value="cut">kazı / dolgu</option>
+      </select></div>
+    <div class="tot" id="totals"></div>
+    <div id="mtable"></div>
+    <p class="note">Satıra tıkla → o kütlenin noktası seçilir, detayı yukarıdaki
+      <b>Nokta düzenle</b> kutusunda çıkar. <code>1 birim = 1 m</code> varsayıldı;
+      TAKS/KAKS <b>su üstündeki</b> kara alanına göre.</p>
+  </section>
+
+  <section class="group">
+    <span class="tag">Nokta düzenle</span>
+    <div class="sel" id="sel">Seçili nokta yok — viewport'ta bir noktaya tıkla.</div>
+    <div class="sl"><span class="nick">Nokta kotu</span>
+      <span class="track"><input type="range" id="dz" min="-20" max="20" step="0.1" value="0" disabled></span>
+      <span class="val" id="dz_v">0.0</span></div>
+    <div class="sl"><span class="nick">Kütle Z</span>
+      <span class="track"><input type="range" id="mzs" min="-15" max="25" step="0.1" value="0" disabled></span>
+      <span class="val" id="mzs_v">0.0</span></div>
+    <div class="row">
+      <button class="btn" id="addmass" disabled>Kütle koy</button>
+      <button class="btn" id="addtree" disabled>Ağaç dik</button>
+    </div>
+    <div class="row">
+      <button class="btn" id="clearpt" disabled>Kotu sıfırla</button>
+      <button class="btn" id="clearall">Hepsini sıfırla</button>
+    </div>
+    <p class="note">Nokta seçiliyken <b>↑ ↓</b> tuşları arazi kotunu oynatır.
+       <b>Kütle Z</b> ise sadece o kütleyi araziye gömer veya havaya kaldırır —
+       arazi yerinde kalır.</p>
+  </section>
+
+  <section class="group">
+    <span class="tag">Teknik çizim <i>· png</i></span>
+    <div class="pnl"><label>Tür</label>
+      <select id="dw_type">
+        <option value="vaz">Vaziyet planı</option>
+        <option value="plan">Plan — kat</option>
+        <option value="sec">Kesit</option>
+        <option value="elev">Görünüş</option>
+      </select></div>
+    <div class="sl" id="dw_zrow"><span class="nick">Kesit kotu</span>
+      <span class="track"><input type="range" id="dw_z" min="-10" max="40" step="0.1" value="30"></span>
+      <span class="val" id="dw_z_v">30.0</span></div>
+    <div class="sl" id="dw_angrow"><span class="nick">Bakış yönü</span>
+      <span class="track"><input type="range" id="dw_ang" min="0" max="359" step="1" value="225"></span>
+      <span class="val" id="dw_ang_v">225</span></div>
+    <div class="sl" id="dw_posrow"><span class="nick">Kesit konumu</span>
+      <span class="track"><input type="range" id="dw_pos" min="-30" max="30" step="0.5" value="0"></span>
+      <span class="val" id="dw_pos_v">0.0</span></div>
+    <div class="pnl" style="margin-top:8px"><label>Renk şeması</label>
+      <select id="dw_mode">
+        <option value="renkli">Renkli — hipsometrik yıkama</option>
+        <option value="kalem">Kalem rengi — ISO 9175-1</option>
+        <option value="mono">Siyah-beyaz</option>
+      </select></div>
+    <div class="sl"><span class="nick">Renk yoğunluğu</span>
+      <span class="track"><input type="range" id="dw_wash" min="0" max="1" step="0.01" value="0.70"></span>
+      <span class="val" id="dw_wash_v">0.70</span></div>
+    <div class="sl"><span class="nick">Kontur silikliği</span>
+      <span class="track"><input type="range" id="dw_fade" min="0" max="0.95" step="0.01" value="0.35"></span>
+      <span class="val" id="dw_fade_v">0.35</span></div>
+    <div class="tog" style="margin-top:6px"><input type="checkbox" id="dw_under">
+      <label for="dw_under">Model altlığı — üstten render <span style="color:var(--warn)">(rengi soldurur)</span></label></div>
+    <div class="pnl"><label>Altlık türü</label>
+      <select id="dw_umode">
+        <option value="golge">Gölge — kabartma, renk bantlarda kalır</option>
+        <option value="renk">Renkli render — rengi bastırır</option>
+      </select></div>
+    <div class="sl"><span class="nick">Altlık yoğ.</span>
+      <span class="track"><input type="range" id="dw_uop" min="0" max="1" step="0.01" value="0.55"></span>
+      <span class="val" id="dw_uop_v">0.55</span></div>
+    <div class="pnl" style="margin-top:8px"><label>Kağıt</label>
+      <select id="dw_paper">
+        <option>A4</option><option selected>A3</option><option>A2</option><option>A1</option>
+      </select></div>
+    <div class="pnl"><label>Çözünürlük</label>
+      <select id="dw_dpi">
+        <option>150</option><option selected>300</option><option>600</option>
+      </select></div>
+    <div class="tog"><input type="checkbox" id="dw_con" checked><label for="dw_con">Konturlar</label></div>
+    <div class="tog"><input type="checkbox" id="dw_lev" checked><label for="dw_lev">Kot çizgileri / etiketleri</label></div>
+    <div class="tog"><input type="checkbox" id="dw_spot"><label for="dw_spot">Kot noktası sayıları (vaziyet)</label></div>
+    <div class="tog"><input type="checkbox" id="dw_tree" checked><label for="dw_tree">Ağaçlar</label></div>
+    <div class="tog"><input type="checkbox" id="dw_lab" checked><label for="dw_lab">Kütle kotları</label></div>
+    <div class="tog"><input type="checkbox" id="dw_num"><label for="dw_num">Nokta numaraları</label></div>
+    <div class="tog"><input type="checkbox" id="dw_mark" checked><label for="dw_mark">Planda kesit çizgisi (A—A)</label></div>
+    <div class="row"><button class="btn" id="dw_open">Çizimi aç</button></div>
+    <p class="note" id="dw_note"></p>
+  </section>
+
+  <section class="group">
+    <span class="tag">OBJ dışa aktar <i>· mesh</i></span>
+    <div class="sl"><span class="nick">Mesh sıklığı</span>
+      <span class="track"><input type="range" id="obj_res" min="10" max="400" step="2" value="120"></span>
+      <span class="val" id="obj_res_v">120</span></div>
+    <div class="tog"><input type="checkbox" id="obj_ter" checked><label for="obj_ter">Arazi</label></div>
+    <div class="tog"><input type="checkbox" id="obj_solid" checked><label for="obj_solid">Katı — etek + taban (kapalı hacim)</label></div>
+    <div class="tog"><input type="checkbox" id="obj_mass" checked><label for="obj_mass">Kütleler</label></div>
+    <div class="tog"><input type="checkbox" id="obj_tree"><label for="obj_tree">Ağaçlar</label></div>
+    <div class="tog"><input type="checkbox" id="obj_sea"><label for="obj_sea">Deniz düzlemi</label></div>
+    <div class="pnl" style="margin-top:8px"><label>Yüz tipi</label>
+      <select id="obj_face">
+        <option value="quad">Dörtgen — düzenli ağ</option>
+        <option value="tri">Üçgen</option>
+      </select></div>
+    <div class="pnl"><label>Eksen</label>
+      <select id="obj_axis">
+        <option value="z">Z yukarı — Rhino, Blender</option>
+        <option value="y">Y yukarı — Maya, Unity, 3ds Max</option>
+      </select></div>
+    <div class="pnl"><label>Birim (1 arazi birimi =)</label>
+      <select id="obj_unit">
+        <option value="m">1 m — metre</option>
+        <option value="cm">100 — santimetre</option>
+        <option value="mm">1000 — milimetre</option>
+      </select></div>
+    <div class="row"><button class="btn" id="obj_dl">OBJ indir</button></div>
+    <p class="note" id="obj_note"></p>
+  </section>
+
+  <section class="group">
+    <span class="tag">Görünürlük</span>
+    <div class="tog"><span class="sw" style="background:#8a9a70"></span>
+      <input type="checkbox" id="v_srf" checked><label for="v_srf">Arazi</label></div>
+    <div class="tog"><span class="sw" style="background:#7fe9d8"></span>
+      <input type="checkbox" id="v_con" checked><label for="v_con">Konturlar + kıyı çizgisi</label></div>
+    <div class="tog"><span class="sw" style="background:#0f4b5e"></span>
+      <input type="checkbox" id="v_sea" checked><label for="v_sea">Deniz</label></div>
+    <div class="tog"><span class="sw" style="background:#ecead1"></span>
+      <input type="checkbox" id="v_box" checked><label for="v_box">Kütleler</label></div>
+    <div class="tog"><span class="sw" style="background:#2f6b4a"></span>
+      <input type="checkbox" id="v_tree" checked><label for="v_tree">Ağaçlar</label></div>
+    <div class="tog"><span class="sw" style="background:#8fd3ff"></span>
+      <input type="checkbox" id="v_pts" checked><label for="v_pts">Grid noktaları</label></div>
+    <div class="tog"><span class="sw" style="background:#7d93a4"></span>
+      <input type="checkbox" id="v_num"><label for="v_num">Nokta numaraları</label></div>
+    <div class="tog"><span class="sw" style="background:#8fd3ff"></span>
+      <input type="checkbox" id="v_wind" checked><label for="v_wind">Rüzgar izleri</label></div>
+    <div class="row"><button class="btn" id="reset">Kamerayı sıfırla</button></div>
+  </section>
+</aside>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+"use strict";
+
+// Sayfa ölürse siyah ekran yerine sebebini yaz. Yükleme hataları (three.js
+// gelmemesi, WebGL bağlamı kurulamaması) aksi halde sessizce her şeyi öldürüyor.
+function fatal(title, detail, e){
+  const el = document.getElementById('fatal');
+  if (!el) return;
+  el.innerHTML = '<h2>' + title + '</h2>' +
+    '<p>' + detail + '</p>' +
+    (e ? '<pre>' + String(e && e.stack || e).replace(/[<>&]/g, c =>
+        ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c])) + '</pre>' : '');
+  el.className = 'on';
+}
+if (typeof THREE === 'undefined'){
+  fatal('three.js yüklenemedi',
+    'Sayfa 3B kütüphanesini <b>cdnjs.cloudflare.com</b> adresinden çekiyor. ' +
+    'İnternet yoksa, cdnjs engelliyse veya dosya çevrimdışı açıldıysa gelmez ' +
+    've sayfa boş kalır. Bağlantıyı kontrol edin ya da three.min.js dosyasını ' +
+    'indirip &lt;script src="three.min.js"&gt; olarak yerelden verin.');
+  return;
+}
+
+try {
+
+const D2R = Math.PI / 180;
+const $ = function(id){ return document.getElementById(id); };
+
+/* ================= Grasshopper zinciri ================= */
+
+function mulberry32(a){
+  return function(){
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function rectangularGrid(sx, sy, ex, ey){
+  const pts = [], w = ex * sx, h = ey * sy;
+  for (let i = 0; i <= ex; i++)
+    for (let j = 0; j <= ey; j++)
+      pts.push([-w/2 + i*sx, -h/2 + j*sy, 0]);
+  return pts;
+}
+function randomZ(count, domEnd, seed){
+  const rnd = mulberry32(seed + 1), v = [];
+  for (let k = 0; k < Math.max(1, count); k++) v.push(rnd() * domEnd);
+  return v;
+}
+
+/* --- B-spline --- */
+function clampedKnots(n, p){
+  const k = [], span = n - p + 1;
+  for (let i = 0; i <= p; i++) k.push(0);
+  for (let i = 1; i < span; i++) k.push(i / span);
+  for (let i = 0; i <= p; i++) k.push(1);
+  return k;
+}
+function findSpan(n, p, u, U){
+  if (u >= U[n+1]) return n;
+  if (u <= U[p])   return p;
+  let lo = p, hi = n + 1, mid = (lo + hi) >> 1;
+  while (u < U[mid] || u >= U[mid+1]){
+    if (u < U[mid]) hi = mid; else lo = mid;
+    mid = (lo + hi) >> 1;
+  }
+  return mid;
+}
+function basisFuns(i, u, p, U){
+  const N = [1], left = [], right = [];
+  for (let j = 1; j <= p; j++){
+    left[j]  = u - U[i + 1 - j];
+    right[j] = U[i + j] - u;
+    let saved = 0;
+    for (let r = 0; r < j; r++){
+      const den = right[r+1] + left[j-r];
+      const temp = den === 0 ? 0 : N[r] / den;
+      N[r] = saved + right[r+1] * temp;
+      saved = left[j-r] * temp;
+    }
+    N[j] = saved;
+  }
+  return N;
+}
+function makeSurface(net, nRow, nCol){
+  const p = Math.min(3, nRow - 1), q = Math.min(3, nCol - 1);
+  const U = clampedKnots(nRow - 1, p), V = clampedKnots(nCol - 1, q);
+  const S = function(u, v){
+    const iu = findSpan(nRow - 1, p, u, U), Nu = basisFuns(iu, u, p, U);
+    const iv = findSpan(nCol - 1, q, v, V), Nv = basisFuns(iv, v, q, V);
+    let x = 0, y = 0, z = 0;
+    for (let a = 0; a <= p; a++)
+      for (let b = 0; b <= q; b++){
+        const w = Nu[a] * Nv[b], cp = net[iu - p + a][iv - q + b];
+        x += w * cp[0]; y += w * cp[1]; z += w * cp[2];
+      }
+    return [x, y, z];
+  };
+
+  // xy haritası ayrıştırılabilir mi?  x = X(u), y = Y(v)
+  let sep = true;
+  for (let i = 0; i < nRow && sep; i++)
+    for (let j = 0; j < nCol; j++){
+      if (Math.abs(net[i][j][0] - net[i][0][0]) > 1e-9 ||
+          Math.abs(net[i][j][1] - net[0][j][1]) > 1e-9){ sep = false; break; }
+    }
+  S.separable = sep;
+
+  if (sep){
+    // 1D B-spline eğrilerini tersine çevirerek (x,y) → (u,v)
+    const xs = [], ys = [];
+    for (let i = 0; i < nRow; i++) xs.push(net[i][0][0]);
+    for (let j = 0; j < nCol; j++) ys.push(net[0][j][1]);
+    function curve(cps, n, p, U){
+      return function(t){
+        const i = findSpan(n, p, t, U), N = basisFuns(i, t, p, U);
+        let s = 0;
+        for (let a = 0; a <= p; a++) s += N[a] * cps[i - p + a];
+        return s;
+      };
+    }
+    const X = curve(xs, nRow - 1, p, U), Y = curve(ys, nCol - 1, q, V);
+
+    // X(u) ve Y(v) monoton — bir kez tablolayıp ikili aramayla tersine çeviriyoruz.
+    // Her çağrıda 40 adım bisection yapmaktan ~40× hızlı; analiz ışınları buna bağlı.
+    const NS = 1024;
+    const xt = new Float64Array(NS + 1), yt = new Float64Array(NS + 1);
+    for (let i = 0; i <= NS; i++){ xt[i] = X(i / NS); yt[i] = Y(i / NS); }
+    const invT = function(tab, target){
+      if (target <= tab[0])  return 0;
+      if (target >= tab[NS]) return 1;
+      let lo = 0, hi = NS;
+      while (hi - lo > 1){
+        const m = (lo + hi) >> 1;
+        if (tab[m] < target) lo = m; else hi = m;
+      }
+      const d = tab[hi] - tab[lo];
+      return (lo + (d ? (target - tab[lo]) / d : 0)) / NS;
+    };
+    S.heightAt = function(x, y){ return S(invT(xt, x), invT(yt, y))[2]; };
+    S.uvAt = function(x, y){ return [invT(xt, x), invT(yt, y)]; };
+  }
+  return S;
+}
+
+/* --- Kontur: marching squares (sadece 4 kenar, tablo yok) --- */
+function contourAt(P, ru, rv, level){
+  const seg = [];
+  const at = function(a, b){ return P[(a*(rv+1) + b) * 3 + 2]; };
+  const pt = function(a, b){ const o = (a*(rv+1) + b) * 3; return [P[o], P[o+1], P[o+2]]; };
+  const cross = function(p, q){
+    const t = (level - p[2]) / (q[2] - p[2]);
+    return [p[0] + t*(q[0]-p[0]), p[1] + t*(q[1]-p[1]), level];
+  };
+  for (let a = 0; a < ru; a++){
+    for (let b = 0; b < rv; b++){
+      const z00 = at(a,b), z10 = at(a+1,b), z11 = at(a+1,b+1), z01 = at(a,b+1);
+      const lo = Math.min(z00,z10,z11,z01), hi = Math.max(z00,z10,z11,z01);
+      if (level < lo || level > hi) continue;
+      const p00 = pt(a,b), p10 = pt(a+1,b), p11 = pt(a+1,b+1), p01 = pt(a,b+1);
+      const hits = [];
+      if ((z00 < level) !== (z10 < level)) hits.push(cross(p00, p10));
+      if ((z10 < level) !== (z11 < level)) hits.push(cross(p10, p11));
+      if ((z11 < level) !== (z01 < level)) hits.push(cross(p11, p01));
+      if ((z01 < level) !== (z00 < level)) hits.push(cross(p01, p00));
+      for (let k = 0; k + 1 < hits.length; k += 2) seg.push(hits[k], hits[k+1]);
+    }
+  }
+  return seg;
+}
+
+/* ================= Sahne ================= */
+
+const stage = document.getElementById('stage');
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(40, 1, 0.5, 3000);
+camera.up.set(0,0,1);
+
+// preserveDrawingBuffer KULLANMIYORUZ: antialias ile birlikte bazı sürücülerde
+// WebGL bağlamı hiç kurulmuyor ve sayfa komple ölüyor. Çizim altlığı zaten
+// render ile drawImage'ı aynı iş parçacığında yapıyor — araya boyama girmediği
+// için tampon hâlâ okunabiliyor.
+const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+stage.appendChild(renderer.domElement);
+
+scene.add(new THREE.HemisphereLight(0x9fc4e0, 0x101c14, 0.55));
+const sun = new THREE.DirectionalLight(0xfff0d6, 1.5);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.bias = -0.0012;
+scene.add(sun);
+scene.add(sun.target);
+const sunDisc = new THREE.Mesh(
+  new THREE.SphereGeometry(1, 20, 16),
+  new THREE.MeshBasicMaterial({ color:0xffc061 })
+);
+scene.add(sunDisc);
+
+const MAT = {
+  srf  : new THREE.MeshStandardMaterial({ vertexColors:true, roughness:.94, metalness:.02,
+                                          side:THREE.DoubleSide, flatShading:false }),
+  sea  : new THREE.MeshStandardMaterial({ vertexColors:true, roughness:.14, metalness:.35,
+                                          transparent:true, opacity:.86 }),
+  skirt: new THREE.MeshStandardMaterial({ color:0x3b3428, roughness:.98, metalness:0,
+                                          side:THREE.DoubleSide }),
+  con  : new THREE.LineBasicMaterial({ color:0x7fe9d8, transparent:true, opacity:.24 }),
+  shore: new THREE.LineBasicMaterial({ color:0x7fe9d8, transparent:true, opacity:.95 }),
+  trunk: new THREE.MeshStandardMaterial({ color:0x4a3f2e, roughness:.95, metalness:0 }),
+  leaf : new THREE.MeshStandardMaterial({ color:0x2f6b4a, roughness:.85, metalness:0,
+                                          flatShading:true }),
+  box  : new THREE.MeshStandardMaterial({ color:0xecead1, roughness:.62, metalness:.05 }),
+  edge : new THREE.LineBasicMaterial({ color:0x7fe9d8, transparent:true, opacity:.75 }),
+  pts  : new THREE.PointsMaterial({ color:0x8fd3ff, size:3.4, sizeAttenuation:false,
+                                    transparent:true, opacity:.65 }),
+  pick : new THREE.PointsMaterial({ color:0xffc061, size:12, sizeAttenuation:false }),
+  wind : new THREE.LineBasicMaterial({ color:0x8fd3ff, transparent:true, opacity:.4 }),
+  fanOk: new THREE.LineBasicMaterial({ color:0x4dcc8c, transparent:true, opacity:.5 }),
+  fanNo: new THREE.LineBasicMaterial({ color:0xd94436, transparent:true, opacity:.45 }),
+  secline: new THREE.LineBasicMaterial({ color:0xc0392b, transparent:true, opacity:.85 })
+};
+
+const objs = {};
+function swap(name, obj){
+  if (objs[name]){
+    scene.remove(objs[name]);
+    objs[name].traverse(function(o){
+      // ağaç geometrileri tüm ağaçlarda paylaşılıyor — dispose edilirse bir daha çizilmez
+      if (o.geometry && !o.geometry.userData.shared) o.geometry.dispose();
+      if (o.material && o.material.userData.cloned) o.material.dispose();
+    });
+  }
+  objs[name] = obj || null;
+  if (obj) scene.add(obj);
+}
+
+/* ================= Durum ================= */
+
+const state = {
+  moved: [],        // son hesaplanan noktalar (kıyı rampası + düzenleme dahil)
+  S: null,          // yüzey
+  sel: -1,          // seçili nokta
+  edits: new Map(), // index → dz
+  ex: 10,
+  site: 50
+};
+
+/* ================= Kamera ================= */
+
+const HOME = { theta:-1.05, phi:1.02, dist:110, z:2 };
+const orbit = { theta:HOME.theta, phi:HOME.phi, dist:HOME.dist, target:new THREE.Vector3(0,0,HOME.z) };
+function applyCam(){
+  const s = Math.sin(orbit.phi);
+  camera.position.set(
+    orbit.target.x + orbit.dist * s * Math.cos(orbit.theta),
+    orbit.target.y + orbit.dist * s * Math.sin(orbit.theta),
+    orbit.target.z + orbit.dist * Math.cos(orbit.phi)
+  );
+  camera.lookAt(orbit.target);
+}
+
+const raycaster = new THREE.Raycaster();
+raycaster.params.Points.threshold = 1.1;
+const ndc = new THREE.Vector2();
+
+(function bindOrbit(){
+  let drag = null, moved3 = 0;
+  const el = renderer.domElement;
+  el.style.touchAction = 'none';
+  el.addEventListener('pointerdown', function(e){
+    drag = { x:e.clientX, y:e.clientY, pan:(e.button === 2 || e.shiftKey) };
+    moved3 = 0;
+    el.setPointerCapture(e.pointerId);
+  });
+  el.addEventListener('pointermove', function(e){
+    if (!drag) return;
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    moved3 += Math.abs(dx) + Math.abs(dy);
+    drag.x = e.clientX; drag.y = e.clientY;
+    if (drag.pan){
+      const dir = new THREE.Vector3().subVectors(camera.position, orbit.target).normalize();
+      const right = new THREE.Vector3().crossVectors(dir, camera.up).normalize();
+      const up = new THREE.Vector3().crossVectors(right, dir).normalize();
+      const k = orbit.dist * 0.0016;
+      orbit.target.addScaledVector(right, -dx * k).addScaledVector(up, dy * k);
+    } else {
+      orbit.theta -= dx * 0.007;
+      orbit.phi = Math.min(Math.PI - 0.05, Math.max(0.06, orbit.phi - dy * 0.007));
+    }
+    applyCam();
+  });
+  el.addEventListener('pointerup', function(e){
+    if (drag && moved3 < 5) pickPoint(e);
+    drag = null;
+  });
+  el.addEventListener('pointercancel', function(){ drag = null; });
+  el.addEventListener('contextmenu', function(e){ e.preventDefault(); });
+  el.addEventListener('wheel', function(e){
+    e.preventDefault();
+    orbit.dist = Math.min(600, Math.max(4, orbit.dist * Math.pow(1.0015, e.deltaY)));
+    applyCam();
+  }, { passive:false });
+})();
+
+function pickPoint(e){
+  if (!objs.pts) return;
+  const r = renderer.domElement.getBoundingClientRect();
+  ndc.x = ((e.clientX - r.left) / r.width) * 2 - 1;
+  ndc.y = -((e.clientY - r.top) / r.height) * 2 + 1;
+  raycaster.setFromCamera(ndc, camera);
+  raycaster.params.Points.threshold = state.site / (state.ex * 14);
+  const hit = raycaster.intersectObject(objs.pts, false);
+  select(hit.length ? hit[0].index : -1);
+  paintAnalysis();
+}
+
+function select(i){
+  state.sel = i;
+  const has = i >= 0 && i < state.moved.length;
+  $('dz').disabled = !has;
+  $('addmass').disabled = !has;
+  $('addtree').disabled = !has;
+  $('clearpt').disabled = !has;
+
+  const m = has ? (state.masses || []).filter(function(q){ return q.idx === i; })[0] : null;
+  $('mzs').disabled = !m;
+  $('mzs').value = m ? m.zoff : 0;
+  $('mzs_v').textContent = (m ? m.zoff : 0).toFixed(1);
+  $('addmass').textContent = m ? 'Kütleyi kaldır' : 'Kütle koy';
+  $('addtree').textContent =
+    (has && (state.treeIdx || []).indexOf(i) >= 0) ? 'Ağacı kaldır' : 'Ağaç dik';
+
+  if (has){
+    const p = state.moved[i];
+    const dz = state.edits.get(i) || 0;
+    $('dz').value = dz;
+    $('dz_v').textContent = dz.toFixed(1);
+    const sz = state.S && state.S.heightAt ? state.S.heightAt(p[0], p[1]) : p[2];
+    let s =
+      '<span class="big">Nokta ' + i + '</span><br>' +
+      'kontrol kotu <em>' + p[2].toFixed(2) + '</em> · ' +
+      'yüzey kotu <em>' + sz.toFixed(2) + '</em><br>' +
+      'x <em>' + p[0].toFixed(1) + '</em>  y <em>' + p[1].toFixed(1) + '</em>' +
+      (dz ? '<br>düzenleme <em>' + (dz > 0 ? '+' : '') + dz.toFixed(1) + '</em>' : '');
+
+    const mm = (state.masses || []).filter(function(q){ return q.idx === i; })[0];
+    if (mm && isFinite(mm.view)){
+      const w = Math.max(mm.cut, mm.fill);
+      s += '<br><br><span style="color:#7fe9d8">KÜTLE</span> ' +
+           (mm.s[0]*2).toFixed(1) + '×' + (mm.s[1]*2).toFixed(1) + '×' + mm.height.toFixed(1) +
+           ' · <em>' + mm.floors + '</em> kat · <em>' + Math.round(mm.gfa) + '</em> m² İA<br>' +
+           'taban kotu <em>' + mm.base.toFixed(2) + '</em>' +
+           (mm.seated ? ' <span style="color:#7d93a4">(oturuyor)</span>'
+                      : mm.zoff < 0 ? ' <span style="color:#ffb454">(' + (-mm.zoff).toFixed(1) + ' gömülü)</span>'
+                                    : ' <span style="color:#ffb454">(' + mm.zoff.toFixed(1) + ' havada)</span>') + '<br>' +
+           'manzara <em>' + Math.round(mm.view*100) + '%</em> · ' +
+           'güneş <em>' + Math.round(mm.sun*100) + '%</em><br>' +
+           'rüzgar <em>' + (isFinite(mm.shelter)
+              ? 'korunaklı (' + mm.shelter.toFixed(0) + ')' : 'açık') + '</em><br>' +
+           'denize <em>' + (isFinite(mm.dSea) ? mm.dSea.toFixed(0) : '—') + '</em><br>' +
+           'kazı <em>' + mm.cut.toFixed(2) + '</em> · dolgu <em>' + mm.fill.toFixed(2) + '</em>' +
+           (mm.seated && w > 0.6 ? ' <span style="color:#ffb454">← oturmuyor</span>' : '');
+    }
+    $('sel').innerHTML = s;
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(p), 3));
+    swap('pick', new THREE.Points(g, MAT.pick));
+  } else {
+    $('sel').textContent = 'Seçili nokta yok — viewport\u0027ta bir noktaya tıkla.';
+    $('dz').value = 0; $('dz_v').textContent = '0.0';
+    swap('pick', null);
+  }
+}
+
+/* ================= Güneş / rüzgar ================= */
+
+function sunVec(){
+  const az = +$('sun_az').value * D2R, alt = +$('sun_alt').value * D2R;
+  return new THREE.Vector3(
+    Math.sin(az) * Math.cos(alt),
+    Math.cos(az) * Math.cos(alt),
+    Math.sin(alt)
+  );
+}
+function applySun(){
+  const v = sunVec(), R = 170;
+  sun.position.copy(v).multiplyScalar(R);
+  sun.target.position.set(0, 0, 0);
+  const s = sun.shadow.camera, half = state.site * 0.85 + 20;
+  s.left = -half; s.right = half; s.top = half; s.bottom = -half;
+  s.near = 10; s.far = R * 2.4;
+  s.updateProjectionMatrix();
+  sunDisc.position.copy(v).multiplyScalar(R * 0.92);
+  sunDisc.scale.setScalar(state.site * 0.055);
+  const alt = +$('sun_alt').value;
+  sun.intensity = 0.55 + 1.05 * Math.sin(alt * D2R);
+  sunDisc.material.color.setHSL(0.09 + 0.02 * (alt/90), 1, 0.5 + 0.18 * (alt/90));
+  drawDial();
+}
+
+const WIND = { n:56, pos:null, geo:null };
+function initWind(){
+  WIND.pos = new Float32Array(WIND.n * 6);
+  WIND.geo = new THREE.BufferGeometry();
+  WIND.geo.setAttribute('position', new THREE.BufferAttribute(WIND.pos, 3));
+  const l = new THREE.LineSegments(WIND.geo, MAT.wind);
+  l.frustumCulled = false;
+  scene.add(l);
+  objs.wind = l;
+  for (let i = 0; i < WIND.n; i++) seedStreak(i, true);
+}
+function seedStreak(i, anywhere){
+  const R = state.site * 0.75, o = i * 6;
+  const wd = +$('wind_dir').value * D2R;
+  const dx = -Math.sin(wd), dy = -Math.cos(wd);            // geldiği yönden esiyor
+  const t = anywhere ? (Math.random() * 2 - 1) : -1;
+  const side = (Math.random() * 2 - 1) * R;
+  const cx = -dy * side + dx * t * R;
+  const cy =  dx * side + dy * t * R;
+  const z = +$('sea_lvl').value + 4 + Math.random() * 22;
+  const len = 3 + Math.random() * 7;
+  WIND.pos[o]   = cx;            WIND.pos[o+1] = cy;            WIND.pos[o+2] = z;
+  WIND.pos[o+3] = cx + dx * len; WIND.pos[o+4] = cy + dy * len; WIND.pos[o+5] = z;
+}
+function stepWind(dt){
+  if (!objs.wind || !objs.wind.visible) return;
+  const wd = +$('wind_dir').value * D2R;
+  const dx = -Math.sin(wd), dy = -Math.cos(wd);
+  const sp = state.site * 0.22 * dt, R = state.site * 0.8;
+  for (let i = 0; i < WIND.n; i++){
+    const o = i * 6;
+    WIND.pos[o] += dx*sp; WIND.pos[o+1] += dy*sp;
+    WIND.pos[o+3] += dx*sp; WIND.pos[o+4] += dy*sp;
+    if (Math.hypot(WIND.pos[o], WIND.pos[o+1]) > R * 1.5) seedStreak(i, false);
+  }
+  WIND.geo.attributes.position.needsUpdate = true;
+}
+
+/* ================= İmza: kadran ================= */
+
+function drawDial(){
+  const cx = 66, cy = 66, R = 44;
+  const P = function(deg, r){
+    const a = (deg - 90) * D2R;   // 0° = kuzey = yukarı
+    return [cx + r * Math.sin(deg * D2R), cy - r * Math.cos(deg * D2R)];
+  };
+  const sd = +$('sea_dir').value, sa = +$('sun_az').value,
+        salt = +$('sun_alt').value, wd = +$('wind_dir').value;
+
+  let s = '';
+  // deniz sektörü
+  const a0 = P(sd - 42, R), a1 = P(sd + 42, R);
+  s += '<path d="M' + cx + ',' + cy + ' L' + a0[0].toFixed(1) + ',' + a0[1].toFixed(1) +
+       ' A' + R + ',' + R + ' 0 0 1 ' + a1[0].toFixed(1) + ',' + a1[1].toFixed(1) + ' Z" ' +
+       'fill="rgba(15,75,94,.5)" stroke="rgba(127,233,216,.35)" stroke-width=".6"/>';
+  const sl = P(sd, R - 13);
+  s += '<text x="' + sl[0].toFixed(1) + '" y="' + (sl[1]+3).toFixed(1) +
+       '" text-anchor="middle" fill="#7fe9d8">DENİZ</text>';
+
+  // halka + tikler
+  s += '<circle cx="' + cx + '" cy="' + cy + '" r="' + R + '" fill="none" stroke="#2c4459" stroke-width="1"/>';
+  for (let d = 0; d < 360; d += 15){
+    const r0 = (d % 90 === 0) ? R - 7 : R - 3.5;
+    const p0 = P(d, r0), p1 = P(d, R);
+    s += '<line x1="' + p0[0].toFixed(1) + '" y1="' + p0[1].toFixed(1) + '" x2="' + p1[0].toFixed(1) +
+         '" y2="' + p1[1].toFixed(1) + '" stroke="#2c4459" stroke-width=".8"/>';
+  }
+  [['K',0],['D',90],['G',180],['B',270]].forEach(function(t){
+    const p = P(t[1], R + 8);
+    s += '<text x="' + p[0].toFixed(1) + '" y="' + (p[1]+3).toFixed(1) + '" text-anchor="middle" class="' +
+         (t[1] === 0 ? 'n' : '') + '">' + t[0] + '</text>';
+  });
+
+  // güneş: yörünge yüksekliğe göre içeri kayar
+  const sr = R * (1 - salt / 110), sp = P(sa, sr);
+  s += '<line x1="' + cx + '" y1="' + cy + '" x2="' + sp[0].toFixed(1) + '" y2="' + sp[1].toFixed(1) +
+       '" stroke="rgba(255,192,97,.45)" stroke-width=".8" stroke-dasharray="2 2"/>';
+  s += '<circle cx="' + sp[0].toFixed(1) + '" cy="' + sp[1].toFixed(1) + '" r="' +
+       (2.5 + salt/26).toFixed(1) + '" fill="#ffc061"/>';
+
+  // rüzgar: geldiği yönden merkeze ok
+  const w0 = P(wd, R - 2), w1 = P(wd, 12);
+  s += '<line x1="' + w0[0].toFixed(1) + '" y1="' + w0[1].toFixed(1) + '" x2="' + w1[0].toFixed(1) +
+       '" y2="' + w1[1].toFixed(1) + '" stroke="#8fd3ff" stroke-width="1.6"/>';
+  const h1 = P(wd + 7, 20), h2 = P(wd - 7, 20);
+  s += '<path d="M' + w1[0].toFixed(1) + ',' + w1[1].toFixed(1) + ' L' + h1[0].toFixed(1) + ',' +
+       h1[1].toFixed(1) + ' L' + h2[0].toFixed(1) + ',' + h2[1].toFixed(1) + ' Z" fill="#8fd3ff"/>';
+
+  s += '<circle cx="' + cx + '" cy="' + cy + '" r="1.6" fill="#dfe7ee"/>';
+  $('dial').innerHTML = s;
+}
+
+/* ================= Kurulum ================= */
+
+function readNums(s){
+  return s.split(/[^0-9.+\-\/]+/).filter(Boolean);
+}
+function parseSize(tok){
+  const p = tok.split('/').map(parseFloat).filter(function(v){ return isFinite(v); });
+  if (!p.length) return null;
+  if (p.length === 1) return [p[0], p[0], p[0]];
+  return [p[0], p[1] !== undefined ? p[1] : p[0], p[2] !== undefined ? p[2] : p[0]];
+}
+
+// TEK arazi paleti: 3B görünüm de teknik çizim de bunu kullanır.
+// Klasik topoğrafik harita rampası: açık yeşil ova → sarı → tan → kahve yükselti.
+// Rampanın TEPESİ koyu olmak zorunda. Bir ara vaziyette 3B'nin kemik beyazı
+// rampasını buraya taşımıştım; tepe beyaza çıkınca arsanın yüksek yarısı boşaldı.
+// Ortadaki soluk sarı bant sorun değil — iki yanı konturla sınırlı, okunuyor.
+const HYPSO = [
+  [0.00, [196, 221, 184]],   // alçak: yeşil ova
+  [0.22, [226, 235, 181]],
+  [0.44, [243, 231, 173]],   // soluk sarı
+  [0.66, [236, 209, 151]],
+  [0.84, [223, 186, 129]],   // tan
+  [1.00, [184, 136,  90]]    // yükselti: kahve
+];
+// Deniz ayrı: 3B koyu tema için, çizim beyaz kağıt için. Altlık zaten
+// üstüne bindiği için ikisi birlikte doğru tonu veriyor.
+const HYDRO = [
+  [0.00, [201, 226, 241]],   // sığ
+  [1.00, [126, 176, 209]]    // derin
+];
+function rampN(tbl, t){                     // → [r,g,b] 0..255
+  t = Math.max(0, Math.min(1, t));
+  for (let i = 0; i + 1 < tbl.length; i++){
+    if (t <= tbl[i+1][0]){
+      const a = tbl[i], b = tbl[i+1];
+      const k = (t - a[0]) / (b[0] - a[0] || 1);
+      return [a[1][0]+(b[1][0]-a[1][0])*k,
+              a[1][1]+(b[1][1]-a[1][1])*k,
+              a[1][2]+(b[1][2]-a[1][2])*k];
+    }
+  }
+  return tbl[tbl.length-1][1].slice();
+}
+function ramp(tbl, t){
+  const c = rampN(tbl, t);
+  return 'rgb(' + Math.round(c[0]) + ',' + Math.round(c[1]) + ',' + Math.round(c[2]) + ')';
+}
+
+// yükseklik → renk. Teknik çizimle AYNI rampa (HYPSO) — altlık ile
+// kot bantları böylece birbirini tutuyor.
+function landColor(z, seaLvl, hi, out){
+  const t = Math.max(0, Math.min(1, (z - seaLvl) / Math.max(0.001, hi - seaLvl)));
+  const c = rampN(HYPSO, t);
+  out.push(c[0]/255, c[1]/255, c[2]/255);
+}
+
+let lastEx = 10;
+function build(){
+  const sz = +$('sz').value, ex = +$('ex').value, ey = ex;
+  const dom = +$('dom').value, num = +$('num').value, seed = +$('seed').value;
+  const smooth = +$('smooth').value;
+  const uc = +$('uc').value;
+  const seaDir = +$('sea_dir').value * D2R, slope = +$('slope').value, seaLvl = +$('sea_lvl').value;
+
+  if (ex !== lastEx){ state.edits.clear(); select(-1); lastEx = ex; }
+  state.ex = ex;
+  state.site = ex * sz;
+
+  // Rectangular → Points (flatten)
+  const base = rectangularGrid(sz, sz, ex, ey);
+  const rz = randomZ(num, dom, seed);
+
+  // kıyı rampası: deniz yönüne doğru alçalma
+  const sdx = Math.sin(seaDir), sdy = Math.cos(seaDir);
+  const half = Math.hypot(state.site/2, state.site/2) || 1;
+
+  const moved = base.map(function(p, k){
+    let z = rz[Math.min(k, rz.length - 1)];
+    z = z * (1 - smooth) + dom * 0.5 * smooth;          // pürüz: rastgeleliği yumuşat
+    z += -slope * ((p[0]*sdx + p[1]*sdy) / half);
+    z += state.edits.get(k) || 0;
+    return [p[0], p[1], z];
+  });
+  state.moved = moved;
+
+  // Number uyarısı
+  const wEl = $('numwarn');
+  if (num < moved.length){
+    wEl.innerHTML = 'Number (<b>' + num + '</b>) < nokta sayısı (<b>' + moved.length +
+      '</b>). Grasshopper son değeri tekrarlar → son <b>' + (moved.length - num) + '</b> nokta düz.';
+    wEl.className = 'note warn';
+  } else {
+    wEl.innerHTML = 'Number ≥ nokta sayısı (<b>' + moved.length + '</b>). Hepsi ayrı kotta.';
+    wEl.className = 'note';
+  }
+  $('sitenote').innerHTML = 'Arazi <b>' + state.site.toFixed(0) + ' × ' + state.site.toFixed(0) +
+    '</b> birim · <b>' + (ex+1) + '×' + (ey+1) + ' = ' + moved.length + '</b> grid noktası.';
+
+  // grid noktaları
+  const pg = new THREE.BufferGeometry();
+  const pa = new Float32Array(moved.length * 3);
+  moved.forEach(function(p,k){ pa[k*3]=p[0]; pa[k*3+1]=p[1]; pa[k*3+2]=p[2]; });
+  pg.setAttribute('position', new THREE.BufferAttribute(pa, 3));
+  swap('pts', new THREE.Points(pg, MAT.pts));
+
+  // Surface From Points
+  const nCol = Math.max(2, Math.min(uc, moved.length));
+  const nRow = Math.floor(moved.length / nCol);
+  const ucEl = $('ucwarn');
+  if (nRow < 2){
+    swap('srf', null); swap('con', null); swap('shore', null);
+    ucEl.innerHTML = 'U Count listeyi bölmüyor, yüzey kurulamıyor.';
+    ucEl.className = 'note warn';
+    state.S = null;
+    finishBoxes(moved, seaLvl);
+    buildTrees(moved, seaLvl);
+    applyVis();
+    return;
+  }
+
+  const net = [];
+  for (let i = 0; i < nRow; i++){
+    const row = [];
+    for (let j = 0; j < nCol; j++) row.push(moved[i*nCol + j]);
+    net.push(row);
+  }
+  const S = makeSurface(net, nRow, nCol);
+  state.S = S;
+
+  if (!S.separable){
+    ucEl.innerHTML = 'U Count <b>' + (ey+1) + '</b> değil → kontrol ağı artık dikdörtgen ' +
+      'değil, yüzey kendi üstüne katlanıyor (Grasshopper\u0027ta da öyle).';
+    ucEl.className = 'note warn';
+  } else {
+    ucEl.innerHTML = 'Kontrol ağı <b>' + nRow + ' × ' + nCol + '</b>. Konturlar <b>' +
+      (+$('ci').value).toFixed(1) + '</b> birimde bir.';
+    ucEl.className = 'note';
+  }
+
+  // yüzeyi örnekle
+  const ru = Math.min(180, Math.max(16, nRow * 5));
+  const rv = Math.min(180, Math.max(16, nCol * 5));
+  const P = new Float32Array((ru+1)*(rv+1)*3);
+  let t = 0, zmin = Infinity, zmax = -Infinity;
+  for (let a = 0; a <= ru; a++)
+    for (let b = 0; b <= rv; b++){
+      const q = S(a/ru, b/rv);
+      P[t++] = q[0]; P[t++] = q[1]; P[t++] = q[2];
+      if (q[2] < zmin) zmin = q[2];
+      if (q[2] > zmax) zmax = q[2];
+    }
+
+  const idxArr = [];
+  for (let a = 0; a < ru; a++)
+    for (let b = 0; b < rv; b++){
+      const i0 = a*(rv+1)+b, i1 = i0+1, i2 = i0+rv+1, i3 = i2+1;
+      idxArr.push(i0,i2,i1, i1,i2,i3);
+    }
+  const cols = [];
+  for (let k = 0; k < P.length; k += 3) landColor(P[k+2], seaLvl, zmax, cols);
+
+  const sg = new THREE.BufferGeometry();
+  sg.setAttribute('position', new THREE.BufferAttribute(P, 3));
+  sg.setAttribute('color', new THREE.BufferAttribute(new Float32Array(cols), 3));
+  sg.setIndex(idxArr);
+  sg.computeVertexNormals();
+  const srf = new THREE.Mesh(sg, MAT.srf);
+  srf.receiveShadow = true; srf.castShadow = true;
+
+  const terrain = new THREE.Group();
+  terrain.add(srf);
+
+  // maket yan yüzü: sınırı tabana kadar indir
+  const ring = [];
+  for (let a = 0; a <= ru; a++)      ring.push(a*(rv+1) + 0);
+  for (let b = 1; b <= rv; b++)      ring.push(ru*(rv+1) + b);
+  for (let a = ru - 1; a >= 0; a--)  ring.push(a*(rv+1) + rv);
+  for (let b = rv - 1; b >= 1; b--)  ring.push(0*(rv+1) + b);
+  const baseZ = Math.min(zmin, seaLvl) - state.site * 0.14;
+  const sk = [];
+  for (let k = 0; k < ring.length; k++){
+    const o1 = ring[k] * 3, o2 = ring[(k + 1) % ring.length] * 3;
+    const x1 = P[o1], y1 = P[o1+1], z1 = P[o1+2];
+    const x2 = P[o2], y2 = P[o2+1], z2 = P[o2+2];
+    sk.push(x1,y1,z1,  x2,y2,z2,  x2,y2,baseZ);
+    sk.push(x1,y1,z1,  x2,y2,baseZ, x1,y1,baseZ);
+  }
+  const skg = new THREE.BufferGeometry();
+  skg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(sk), 3));
+  skg.computeVertexNormals();
+  const skirt = new THREE.Mesh(skg, MAT.skirt);
+  skirt.castShadow = true; skirt.receiveShadow = true;
+  terrain.add(skirt);
+
+  swap('srf', terrain);
+
+  // konturlar
+  const ci = +$('ci').value;
+  const cseg = [];
+  const lo = Math.ceil(zmin / ci) * ci;
+  let levels = 0;
+  for (let L = lo; L <= zmax && levels < 60; L += ci, levels++){
+    if (Math.abs(L - seaLvl) < ci * 0.02) continue;
+    const s = contourAt(P, ru, rv, L);
+    for (let k = 0; k < s.length; k++) cseg.push(s[k][0], s[k][1], s[k][2] + 0.06);
+  }
+  if (cseg.length){
+    const cg = new THREE.BufferGeometry();
+    cg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(cseg), 3));
+    swap('con', new THREE.LineSegments(cg, MAT.con));
+  } else swap('con', null);
+
+  // kıyı çizgisi
+  const sh = contourAt(P, ru, rv, seaLvl);
+  state.shoreSeg = sh;
+  if (sh.length){
+    const arr = [];
+    for (let k = 0; k < sh.length; k++) arr.push(sh[k][0], sh[k][1], sh[k][2] + 0.12);
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(arr), 3));
+    swap('shore', new THREE.LineSegments(g, MAT.shore));
+  } else swap('shore', null);
+
+  // kara alanı — su üstündeki hücrelerin plandaki gerçek alanı (shoelace)
+  let landArea = 0;
+  for (let a = 0; a < ru; a++)
+    for (let b = 0; b < rv; b++){
+      const i0 = (a*(rv+1)+b)*3, i1 = ((a+1)*(rv+1)+b)*3,
+            i2 = ((a+1)*(rv+1)+b+1)*3, i3 = (a*(rv+1)+b+1)*3;
+      const zc = (P[i0+2] + P[i1+2] + P[i2+2] + P[i3+2]) / 4;
+      if (zc <= seaLvl) continue;
+      landArea += Math.abs(
+        (P[i0]*(P[i1+1]-P[i3+1]) + P[i1]*(P[i2+1]-P[i0+1]) +
+         P[i2]*(P[i3+1]-P[i1+1]) + P[i3]*(P[i0+1]-P[i2+1])) / 2
+      );
+    }
+  state.landArea = landArea;
+  state.zmin = zmin; state.zmax = zmax;
+  // Örneklenmiş yüzey ızgarası: teknik çizim kot bantlarını, konturları ve
+  // kıyı çizgisini bundan üretiyor. Atanmazsa ru/rv undefined olur, döngüler
+  // hiç dönmez ve çizimde arazi bütünüyle boş çıkar.
+  state.P = P; state.ru = ru; state.rv = rv;
+
+  // deniz — merkezden uzaklaştıkça ufka sönümlensin
+  const R3 = state.site * 3;
+  const seaG = new THREE.PlaneGeometry(R3, R3, 32, 32);
+  const sp = seaG.attributes.position, scol = [];
+  for (let i = 0; i < sp.count; i++){
+    const d = Math.min(1, Math.hypot(sp.getX(i), sp.getY(i)) / (R3 * 0.5));
+    const k = d * d;
+    scol.push(0.059*(1-k) + 0.024*k, 0.294*(1-k) + 0.078*k, 0.369*(1-k) + 0.110*k);
+  }
+  seaG.setAttribute('color', new THREE.BufferAttribute(new Float32Array(scol), 3));
+  const sea = new THREE.Mesh(seaG, MAT.sea);
+  sea.position.z = seaLvl;
+  swap('sea', sea);
+
+  // kütleler + ağaçlar
+  finishBoxes(moved, seaLvl);
+  buildTrees(moved, seaLvl);
+
+  paintReadout(zmin, zmax, seaLvl);
+  applyVis();
+  applySun();
+  analyze();
+  paintAnalysis();
+  drawSectionLine();
+  applyVis();
+  if (state.sel >= 0) select(state.sel);
+}
+
+function finishBoxes(moved, seaLvl){
+  const toks = readNums($('idx').value);
+  const sizeToks = readNums($('siz').value);
+  const zToks = readNums($('mz').value);
+  const group = new THREE.Group();
+  let wrapped = 0, drowned = 0;
+  const marks = [], masses = [];
+
+  toks.forEach(function(tk, k){
+    const ix = Math.round(parseFloat(tk));
+    if (!isFinite(ix) || !moved.length) return;
+    if (ix >= moved.length || ix < 0) wrapped++;
+    const w = ((ix % moved.length) + moved.length) % moved.length;   // Wrap = true
+    const p = moved[w];
+    const st = sizeToks.length ? parseSize(sizeToks[Math.min(k, sizeToks.length - 1)]) : [1,1,1];
+    if (!st || st[0] <= 0 || st[1] <= 0 || st[2] <= 0) return;
+
+    // arazi kotu + Z ofseti:  0 = oturur, − = gömülü, + = havada
+    const gz = state.S && state.S.heightAt ? state.S.heightAt(p[0], p[1]) : p[2];
+    const dzo = zToks.length ? (parseFloat(zToks[Math.min(k, zToks.length - 1)]) || 0) : 0;
+    const base = gz + dzo;
+    if (base < seaLvl) drowned++;
+
+    const g = new THREE.BoxGeometry(st[0]*2, st[1]*2, st[2]*2);
+    const mat = MAT.box.clone();          // renklendirme için ayrı materyal
+    mat.userData.cloned = true;
+    const m = new THREE.Mesh(g, mat);
+    m.position.set(p[0], p[1], base + st[2]);
+    m.castShadow = true; m.receiveShadow = true;
+    group.add(m);
+    const e = new THREE.LineSegments(new THREE.EdgesGeometry(g), MAT.edge);
+    e.position.copy(m.position);
+    group.add(e);
+    marks.push(w);
+    masses.push({
+      idx: w, slot: k, p: p, s: st, ground: gz, zoff: dzo,
+      base: base, top: base + st[2]*2, mesh: m,
+      mn: [p[0]-st[0], p[1]-st[1], base],
+      mx: [p[0]+st[0], p[1]+st[1], base + st[2]*2]
+    });
+  });
+
+  swap('box', group.children.length ? group : null);
+  stats.box = masses.length;
+  stats.wrapped = wrapped;
+  stats.drowned = drowned;
+  state.massIdx = marks;
+  state.masses = masses;
+}
+
+/* --- marching squares segmentlerini polyline'a zincirle (kontur etiketleri için) --- */
+function chainSegs(seg, tol){
+  const key = function(p){ return Math.round(p[0]/tol) + '_' + Math.round(p[1]/tol); };
+  const nodes = new Map();
+  const edges = [];
+  for (let i = 0; i + 1 < seg.length; i += 2){
+    const a = seg[i], b = seg[i+1];
+    const ka = key(a), kb = key(b);
+    if (ka === kb) continue;
+    if (!nodes.has(ka)) nodes.set(ka, { p:a, links:[] });
+    if (!nodes.has(kb)) nodes.set(kb, { p:b, links:[] });
+    nodes.get(ka).links.push(kb);
+    nodes.get(kb).links.push(ka);
+    edges.push([ka, kb]);
+  }
+  const used = new Set();
+  const eid = function(a, b){ return a < b ? a + '|' + b : b + '|' + a; };
+  const walk = function(start){
+    const line = [nodes.get(start).p];
+    let cur = start, prev = null;
+    for (let guard = 0; guard < 100000; guard++){
+      const nb = nodes.get(cur).links;
+      let nxt = null;
+      for (let i = 0; i < nb.length; i++){
+        if (nb[i] === prev) continue;
+        if (used.has(eid(cur, nb[i]))) continue;
+        nxt = nb[i]; break;
+      }
+      if (nxt === null) break;
+      used.add(eid(cur, nxt));
+      line.push(nodes.get(nxt).p);
+      prev = cur; cur = nxt;
+      if (cur === start) break;
+    }
+    return line;
+  };
+  const lines = [];
+  nodes.forEach(function(n, k){
+    if (n.links.length === 1){ const L = walk(k); if (L.length > 2) lines.push(L); }
+  });
+  edges.forEach(function(e){
+    if (used.has(eid(e[0], e[1]))) return;
+    const L = walk(e[0]); if (L.length > 2) lines.push(L);
+  });
+  return lines;
+}
+
+/* ================= Ağaçlar ================= */
+
+let TREE_G = null;
+function treeGeo(){
+  if (TREE_G) return TREE_G;
+  const trunk = new THREE.CylinderGeometry(0.05, 0.085, 0.42, 6);
+  trunk.rotateX(Math.PI/2); trunk.translate(0, 0, 0.21);
+  const leaf = new THREE.ConeGeometry(0.3, 0.72, 7);
+  leaf.rotateX(Math.PI/2); leaf.translate(0, 0, 0.42 + 0.36);
+  trunk.userData.shared = true;
+  leaf.userData.shared = true;
+  TREE_G = { trunk:trunk, leaf:leaf };   // toplam boy ≈ 1.14, ölçekleyip kullanıyoruz
+  return TREE_G;
+}
+
+function buildTrees(moved, seaLvl){
+  const toks = readNums($('tree_idx').value);
+  const h0 = +$('tree_h').value;
+  const G = treeGeo();
+  const grp = new THREE.Group();
+  const marks = [];
+  const rnd = mulberry32(+$('seed').value * 7 + 13);
+
+  toks.forEach(function(tk){
+    const ix = Math.round(parseFloat(tk));
+    if (!isFinite(ix) || !moved.length) return;
+    const w = ((ix % moved.length) + moved.length) % moved.length;   // kütlelerle aynı Wrap
+    const p = moved[w];
+    const gz = state.S && state.S.heightAt ? state.S.heightAt(p[0], p[1]) : p[2];
+    if (gz < seaLvl) return;                    // su altına ağaç dikmiyoruz
+    const h = h0 * (0.7 + rnd() * 0.6);         // aynı boyda dizilmesin
+    const s = h / 1.14;
+    const rot = rnd() * Math.PI * 2;
+
+    const t = new THREE.Mesh(G.trunk, MAT.trunk);
+    t.position.set(p[0], p[1], gz); t.scale.setScalar(s); t.rotation.z = rot;
+    t.castShadow = true;
+    const l = new THREE.Mesh(G.leaf, MAT.leaf);
+    l.position.set(p[0], p[1], gz); l.scale.set(s * (0.8 + rnd()*0.45), s * (0.8 + rnd()*0.45), s);
+    l.rotation.z = rot;
+    l.castShadow = true; l.receiveShadow = true;
+    grp.add(t); grp.add(l);
+    marks.push(w);
+  });
+
+  swap('tree', grp.children.length ? grp : null);
+  state.treeIdx = marks;
+  stats.tree = marks.length;
+}
+
+/* --- çizim altlığı: modelin ortografik üstten render'ı --- */
+// Ayrı bir WebGLRenderer açmıyoruz: gölge haritaları renderer'a bağlı GPU kaynakları,
+// aynı sahneyi iki bağlamda render etmek onları bozar. Ana renderer'ı geçici olarak
+// büyütüp tepeden render alıp eski haline döndürüyoruz — tek iş parçacığında,
+// araya boyama girmediği için ekranda titreme olmuyor.
+function topViewCanvas(px, gray){
+  if (!state.site || !state.S) return null;
+  const el = renderer.domElement;
+  // getSize CSS boyutunu verir; el.width tampon boyutudur (pixelRatio ile çarpılmış).
+  // Geri yüklerken CSS boyutunu kullanmak şart, yoksa her açılışta tampon dpr× katlanır.
+  const sz = renderer.getSize(new THREE.Vector2());
+  const dpr0 = renderer.getPixelRatio();
+  try {
+    px = Math.max(512, Math.min(3000, Math.round(px)));
+    const half = state.site / 2;
+    // ortografik, tam tepeden: görüntü x = dünya x, görüntü yukarı = dünya +y
+    // → çizimin dünya→kağıt dönüşümüne birebir oturur
+    const cam = new THREE.OrthographicCamera(-half, half, half, -half, 0.1, state.site*8);
+    cam.up.set(0, 1, 0);
+    cam.position.set(0, 0, state.site*4);
+    cam.lookAt(0, 0, 0);
+
+    // altlıkta sadece model olsun: ızgara, eksen, nokta, rüzgar, analiz çizgileri çıksın
+    const hide = [grid, sunDisc, objs.pts, objs.pick, objs.wind, objs.secline, objs.fan];
+    scene.traverse(function(o){ if (o.type === 'AxesHelper') hide.push(o); });
+    const prev = hide.map(function(o){ return o ? o.visible : null; });
+    hide.forEach(function(o){ if (o) o.visible = false; });
+
+    renderer.setPixelRatio(1);           // tampon tam olarak px×px olsun
+    renderer.setSize(px, px, false);
+    renderer.render(scene, cam);
+
+    const out = document.createElement('canvas');
+    out.width = px; out.height = px;
+    const c2 = out.getContext('2d');
+    // Gölge modunda render'ı griye çeviriyoruz: renk bantlardan gelsin,
+    // render sadece kabartma/gölge katsın (hipsometrik tonlama + kabartma kuralı).
+    let manual = false;
+    if (gray){
+      c2.filter = 'grayscale(1)';
+      if (c2.filter !== 'grayscale(1)'){ c2.filter = 'none'; manual = true; }
+    }
+    // kaynak dikdörtgenini açıkça ver — tampon beklenenden farklıysa yine de tam otursun
+    c2.drawImage(el, 0, 0, el.width, el.height, 0, 0, px, px);
+    if (manual){                                  // ctx.filter yoksa elle griye çevir
+      const d = c2.getImageData(0, 0, px, px), a = d.data;
+      for (let i = 0; i < a.length; i += 4){
+        const g = 0.2126*a[i] + 0.7152*a[i+1] + 0.0722*a[i+2];
+        a[i] = a[i+1] = a[i+2] = g;
+      }
+      c2.putImageData(d, 0, 0);
+    }
+
+    hide.forEach(function(o, i){ if (o) o.visible = prev[i]; });
+    return out;
+  } catch (e){
+    return null;                         // render alınamadıysa altlıksız devam
+  } finally {
+    renderer.setPixelRatio(dpr0);
+    renderer.setSize(sz.x, sz.y, false); // CSS boyutu — tampon dpr ile yeniden çarpılır
+    renderer.render(scene, camera);
+  }
+}
+
+/* ================= Teknik çizim ================= */
+
+// ISO 128 / 5457 referansı: kağıt, kalem kalınlıkları, standart ölçekler
+const PAPER  = { A4:[297,210], A3:[420,297], A2:[594,420], A1:[841,594] };
+const SCALES = [50, 100, 200, 250, 500, 1000, 2000, 5000];
+
+// ISO 9175-1 teknik kalem renk kodu. Beyaz (0.25) ve sarı (0.35) kağıtta
+// okunmadığı için tonları korunup değerleri koyulaştırıldı — antette not düşülüyor.
+const ISO_PEN = {
+  0.13: ['#7d5ba6', 'menekşe'],
+  0.18: ['#cc3333', 'kırmızı'],
+  0.25: ['#9a9a9a', 'beyaz'],
+  0.35: ['#c99a10', 'sarı'],
+  0.50: ['#8a5a2b', 'kahve'],
+  0.70: ['#2f6fb0', 'mavi'],
+  1.00: ['#d4741f', 'turuncu']
+};
+
+// kalem tanımları: kalınlık + renkli şemadaki renk + ne için
+// fade:true → 'Kontur silikliği' slider'ından etkilenir
+const PENS = {
+  frame:     { w:0.70, col:'#1a1a1a', use:'çerçeve' },
+  cut:       { w:0.70, col:'#1a1a1a', use:'kesilen' },
+  visible:   { w:0.35, col:'#1a1a1a', use:'görünen' },
+  hidden:    { w:0.18, col:'#8a8a8a', use:'gizli / arkada' },
+  contourMj: { w:0.25, col:'#8a5a2a', use:'ana kontur', fade:true },
+  contour:   { w:0.13, col:'#a8834f', use:'ara kontur',  fade:true },
+  thin:      { w:0.13, col:'#a8a8a8', use:'yardımcı',    fade:true },
+  water:     { w:0.35, col:'#2b6b80', use:'kıyı / su' },
+  veg:       { w:0.35, col:'#3d6b4e', use:'bitki' },
+  secmark:   { w:0.70, col:'#c0392b', use:'kesit çizgisi' }
+};
+
+// çizim modu: 'renkli' | 'kalem' (ISO renk kodu) | 'mono'
+let MODE = 'renkli', WASH = 0.7, FADE = 0.55;
+const INK = '#111', GREY = '#7a7a7a', LIGHT = '#c9c9c9';
+
+// '#rrggbb' → 'rgba(r,g,b,a)'.  Silikliği globalAlpha yerine renge katıyoruz,
+// yoksa her çizgide save/restore gerekir ve dolgu alfalarıyla karışır.
+function withA(col, a){
+  if (a >= 0.999) return col;
+  const h = col.replace('#', '');
+  const n = parseInt(h.length === 3
+    ? h[0]+h[0]+h[1]+h[1]+h[2]+h[2] : h, 16);
+  return 'rgba(' + ((n>>16)&255) + ',' + ((n>>8)&255) + ',' + (n&255) + ',' + a.toFixed(3) + ')';
+}
+
+function pen(ctx, name, dash){
+  const p = PENS[name];
+  ctx.lineWidth = p.w;
+  let col = MODE === 'mono' ? INK
+          : MODE === 'kalem' ? (ISO_PEN[p.w] ? ISO_PEN[p.w][0] : INK)
+          : p.col;
+  if (p.fade) col = withA(col, 1 - FADE);
+  ctx.strokeStyle = col;
+  ctx.setLineDash(dash || []);
+}
+// geriye dönük: doğrudan mm + renk
+function penSet(ctx, mm, col){
+  ctx.lineWidth = mm;
+  ctx.strokeStyle = MODE === 'mono' ? INK
+                  : MODE === 'kalem' ? (ISO_PEN[mm] ? ISO_PEN[mm][0] : INK)
+                  : (col || INK);
+  ctx.setLineDash([]);
+}
+const LW = {
+  frame:0.70, cut:0.70, visible:0.35, hidden:0.18,
+  contour:0.13, contourMajor:0.25, thin:0.13, text:0.18
+};
+
+function sheetGeom(paper){
+  const P = PAPER[paper] || PAPER.A3;
+  const W = P[0], H = P[1];
+  const ml = 20, mr = 10, mt = 10, mb = 10;             // sol kenar ciltleme payı
+  const frame = { x:ml, y:mt, w:W-ml-mr, h:H-mt-mb };
+  const band = 34;                                       // alt şerit: antet + ölçek
+  const area = { x:frame.x+6, y:frame.y+6, w:frame.w-12, h:frame.h-12-band };
+  const tb = { w:104, h:band-4, x:frame.x+frame.w-104-2, y:frame.y+frame.h-band+2 };
+  return { W:W, H:H, frame:frame, area:area, tb:tb, band:band };
+}
+
+// dünya genişliğini kağıda sığdıran en büyük standart ölçek
+function pickScale(wW, wH, area){
+  for (let i = 0; i < SCALES.length; i++){
+    const s = SCALES[i];
+    if (wW * 1000 / s <= area.w && wH * 1000 / s <= area.h) return s;
+  }
+  return SCALES[SCALES.length - 1];
+}
+
+// --- kesit/görünüş geometrisi ---
+// bakış yönü viewN = (sin θ, cos θ); çizimin yatay ekseni right = (cos θ, −sin θ)
+function viewAxes(deg){
+  const a = deg * D2R;
+  return { n:[Math.sin(a), Math.cos(a)], r:[Math.cos(a), -Math.sin(a)] };
+}
+
+// kesit düzlemi üzerindeki arazi profili
+function terrainProfile(S, ax, pos, half, steps){
+  const c = [ax.n[0]*pos, ax.n[1]*pos], out = [];
+  const span = half * 1.45;
+  for (let i = 0; i <= steps; i++){
+    const t = -span + (2*span) * (i/steps);
+    const x = c[0] + ax.r[0]*t, y = c[1] + ax.r[1]*t;
+    if (Math.abs(x) > half || Math.abs(y) > half){ out.push(null); continue; }
+    out.push({ t:t, z:S.heightAt(x, y) });
+  }
+  return out;
+}
+
+// görünüşte arazi silueti: her t için derinlik boyunca en yüksek kot
+function terrainSilhouette(S, ax, half, steps){
+  const span = half * 1.45, out = [];
+  for (let i = 0; i <= steps; i++){
+    const t = -span + (2*span) * (i/steps);
+    let best = null;
+    for (let d = -span; d <= span; d += half/40){
+      const x = ax.r[0]*t + ax.n[0]*d, y = ax.r[1]*t + ax.n[1]*d;
+      if (Math.abs(x) > half || Math.abs(y) > half) continue;
+      const z = S.heightAt(x, y);
+      if (best === null || z > best) best = z;
+    }
+    out.push(best === null ? null : { t:t, z:best });
+  }
+  return out;
+}
+
+// doğrunun eksene paralel dikdörtgeni kestiği t aralığı (slab)
+function clipRect(c, dir, mn, mx){
+  let t0 = -1e9, t1 = 1e9;
+  for (let a = 0; a < 2; a++){
+    if (Math.abs(dir[a]) < 1e-9){
+      if (c[a] < mn[a] || c[a] > mx[a]) return null;
+      continue;
+    }
+    let ta = (mn[a]-c[a]) / dir[a], tb = (mx[a]-c[a]) / dir[a];
+    if (ta > tb){ const s = ta; ta = tb; tb = s; }
+    if (ta > t0) t0 = ta;
+    if (tb < t1) t1 = tb;
+    if (t0 > t1) return null;
+  }
+  return [t0, t1];
+}
+
+// kütlenin çizim eksenine izdüşümü + kesit düzlemine göre derinliği
+function projectBox(m, ax, pos){
+  const cs = [[m.mn[0],m.mn[1]], [m.mx[0],m.mn[1]], [m.mx[0],m.mx[1]], [m.mn[0],m.mx[1]]];
+  let t0 = 1e9, t1 = -1e9, d0 = 1e9, d1 = -1e9;
+  cs.forEach(function(p){
+    const t = p[0]*ax.r[0] + p[1]*ax.r[1];
+    const d = p[0]*ax.n[0] + p[1]*ax.n[1] - pos;
+    t0 = Math.min(t0, t); t1 = Math.max(t1, t);
+    d0 = Math.min(d0, d); d1 = Math.max(d1, d);
+  });
+  return { t0:t0, t1:t1, dNear:d0, dFar:d1 };
+}
+
+// kütlenin önündeki araziden görünen taban kotu (kaba gizli-çizgi)
+// d = n ekseni üzerinde MUTLAK koordinat; tarama kesit düzleminden (pos) kütleye kadar
+function occluderZ(S, m, ax, pos, half){
+  const pr = projectBox(m, ax, pos);
+  if (pr.dNear <= 0) return -1e9;
+  const step = Math.max(0.4, half/25);
+  let best = -1e9;
+  for (let i = 0; i <= 8; i++){
+    const t = pr.t0 + (pr.t1-pr.t0) * (i/8);
+    for (let d = pos + 0.001; d < pr.dNear + pos; d += step){
+      const x = ax.r[0]*t + ax.n[0]*d, y = ax.r[1]*t + ax.n[1]*d;
+      if (Math.abs(x) > half || Math.abs(y) > half) continue;
+      const z = S.heightAt(x, y);
+      if (z > best) best = z;
+    }
+  }
+  return best;
+}
+
+/* --- çizim yardımcıları (hepsi mm cinsinden) --- */
+function hatch(ctx, path, spacing, angDeg, mm, col){
+  ctx.save();
+  ctx.clip(path);
+  const a = angDeg * D2R, L = 2000;
+  penSet(ctx, mm, col);
+  ctx.beginPath();
+  for (let k = -L; k < L; k += spacing){
+    ctx.moveTo(k*Math.cos(a) - L*Math.sin(a), k*Math.sin(a) + L*Math.cos(a));
+    ctx.lineTo(k*Math.cos(a) + L*Math.sin(a), k*Math.sin(a) - L*Math.cos(a));
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+function txt(ctx, s, x, y, size, col, align, rot){
+  ctx.save();
+  ctx.translate(x, y);
+  if (rot) ctx.rotate(rot);
+  ctx.font = '500 ' + size + 'px "IBM Plex Mono", monospace';
+  ctx.fillStyle = col || INK;
+  ctx.textAlign = align || 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(s, 0, 0);
+  ctx.restore();
+}
+
+/* --- sayfa çerçevesi, antet, ölçek çubuğu, kuzey oku, kalem şeması --- */
+function penKey(ctx, x, y, w){
+  txt(ctx, 'KALEM', x, y, 2.2, GREY);
+  const order = ['cut', 'visible', 'hidden', 'contourMj', 'contour'];
+  let yy = y + 4.4;
+  order.forEach(function(n){
+    const p = PENS[n];
+    const iso = ISO_PEN[p.w];
+    // örnek çizgi
+    pen(ctx, n);
+    ctx.setLineDash([]);
+    ctx.beginPath(); ctx.moveTo(x, yy); ctx.lineTo(x + 9, yy); ctx.stroke();
+    // ISO renk noktası
+    if (iso){
+      ctx.beginPath(); ctx.arc(x + 12, yy, 1.05, 0, Math.PI*2);
+      ctx.fillStyle = iso[0]; ctx.fill();
+      penSet(ctx, 0.09, '#666'); ctx.strokeStyle = '#666'; ctx.stroke();
+    }
+    txt(ctx, p.w.toFixed(2), x + 15, yy, 2.1, INK);
+    txt(ctx, p.use, x + 24, yy, 2.1, GREY);
+    if (iso) txt(ctx, iso[1], x + 44, yy, 1.9, '#aaa');
+    yy += 4.6;
+  });
+}
+
+function hypsoKey(ctx, x, y, w, seaLvl, zmax, ci){
+  txt(ctx, 'KOT', x, y, 2.2, GREY);
+  const n = 6, sw = w / n, yy = y + 4.6, h = 3.2;
+  for (let i = 0; i < n; i++){
+    ctx.globalAlpha = WASH;
+    ctx.fillStyle = ramp(HYPSO, i / (n-1));
+    ctx.fillRect(x + i*sw, yy, sw, h);
+    ctx.globalAlpha = 1;
+    penSet(ctx, 0.09, '#999'); ctx.strokeStyle = '#999';
+    ctx.strokeRect(x + i*sw, yy, sw, h);
+  }
+  for (let i = 0; i <= n; i += 2){
+    const z = seaLvl + (zmax - seaLvl) * (i / n);
+    txt(ctx, z.toFixed(0), x + i*sw, yy + h + 2.2, 2, GREY, 'center');
+  }
+  ctx.globalAlpha = WASH;
+  ctx.fillStyle = ramp(HYDRO, 0.6); ctx.fillRect(x, yy - 4.4, sw*1.4, h*0.7);
+  ctx.globalAlpha = 1;
+  txt(ctx, 'deniz', x + sw*1.4 + 1.5, yy - 4.4 + h*0.35, 2, GREY);
+}
+
+function drawFrame(ctx, G, info){
+  penSet(ctx, LW.frame, INK);
+  ctx.strokeRect(G.frame.x, G.frame.y, G.frame.w, G.frame.h);
+
+  // antet
+  const t = G.tb;
+  penSet(ctx, LW.visible, INK);
+  ctx.strokeRect(t.x, t.y, t.w, t.h);
+  ctx.beginPath();
+  ctx.moveTo(t.x, t.y + 11); ctx.lineTo(t.x + t.w, t.y + 11);
+  ctx.moveTo(t.x, t.y + 20); ctx.lineTo(t.x + t.w, t.y + 20);
+  ctx.moveTo(t.x + 52, t.y + 20); ctx.lineTo(t.x + 52, t.y + t.h);
+  penSet(ctx, LW.thin, INK);
+  ctx.stroke();
+  txt(ctx, 'GH_TOP · KIYI ARAZİSİ', t.x + 3, t.y + 5.5, 3.4, INK);
+  txt(ctx, info.title, t.x + 3, t.y + 15.5, 4.6, INK);
+  txt(ctx, 'ÖLÇEK', t.x + 3, t.y + 24, 2.2, GREY);
+  txt(ctx, '1:' + info.scale, t.x + 3, t.y + 29, 4.2, INK);
+  txt(ctx, 'KAĞIT', t.x + 55, t.y + 24, 2.2, GREY);
+  txt(ctx, info.paper + ' · ' + info.dpi + ' dpi', t.x + 55, t.y + 29, 3.2, INK);
+
+  // --- alt şerit: ölçek çubuğu → kuzey → kalem şeması → kot skalası ---
+  const by = G.frame.y + G.frame.h - 14;
+  let cx = G.frame.x + 6;
+  const room = t.x - 3;
+
+  const unit = info.barUnit, n = 4, seg = unit * 1000 / info.scale;
+  penSet(ctx, LW.visible, INK);
+  for (let i = 0; i < n; i++){
+    ctx.fillStyle = (i % 2) ? '#fff' : INK;
+    ctx.fillRect(cx + i*seg, by, seg, 1.8);
+    ctx.strokeRect(cx + i*seg, by, seg, 1.8);
+  }
+  for (let i = 0; i <= n; i++)
+    txt(ctx, String(i*unit), cx + i*seg, by - 2.6, 2.4, INK, 'center');
+  txt(ctx, 'metre', cx + n*seg + 2, by + 0.9, 2.4, GREY);
+  cx += n*seg + 16;
+
+  if (info.north && cx + 12 < room){
+    const nx = cx, ny = by - 3;
+    penSet(ctx, LW.visible, INK);
+    ctx.beginPath();
+    ctx.moveTo(nx, ny - 7); ctx.lineTo(nx + 2.6, ny + 4); ctx.lineTo(nx, ny + 1.8);
+    ctx.lineTo(nx - 2.6, ny + 4); ctx.closePath();
+    ctx.fillStyle = INK; ctx.fill(); ctx.stroke();
+    txt(ctx, 'K', nx, ny - 10, 3, INK, 'center');
+    cx += 14;
+  }
+
+  const keyY = G.frame.y + G.frame.h - G.band + 4;
+  if (cx + 58 < room){ penKey(ctx, cx, keyY, 58); cx += 64; }
+  if (info.hypso && cx + 42 < room) hypsoKey(ctx, cx, keyY, 40, info.seaLvl, info.zmax, info.ci);
+
+  if (info.note) txt(ctx, info.note, G.frame.x + 6, G.frame.y + G.frame.h - 4.2, 2.2, GREY);
+}
+
+/* --- VAZİYET / PLAN --- */
+function drawPlan(ctx, G, o){
+  const S = state.S, half = state.site/2, seaLvl = o.seaLvl;
+  const isVaz = o.isVaz;
+  // vaziyette kesme yok: kesit düzlemi her şeyin üstünde → kütleler çatı olarak görünür
+  const cutZ = isVaz ? Infinity : o.cutZ;
+  const wW = state.site * 1.06;
+  const scale = pickScale(wW, wW, G.area);
+  const k = 1000 / scale;                                  // metre → mm
+  const ox = G.area.x + G.area.w/2, oy = G.area.y + G.area.h/2;
+  const X = function(wx){ return ox + wx * k; };
+  const Y = function(wy){ return oy - wy * k; };           // kuzey yukarı
+
+  // --- zemin yıkaması: kot bantları (hipsometrik) + su derinliği ---
+  const P = o.P, ru = o.ru, rv = o.rv;
+  const ci = o.ci;
+  const cellPath = function(i0, i1, i2, i3, path){
+    path.moveTo(X(P[i0]), Y(P[i0+1]));
+    path.lineTo(X(P[i1]), Y(P[i1+1]));
+    path.lineTo(X(P[i2]), Y(P[i2+1]));
+    path.lineTo(X(P[i3]), Y(P[i3+1]));
+    path.closePath();
+  };
+  const landBand = new Map(), seaBand = new Map();
+  const zTop = Math.max(o.zmax, seaLvl + 0.001);
+  for (let a = 0; a < ru; a++)
+    for (let b = 0; b < rv; b++){
+      const i0 = (a*(rv+1)+b)*3, i1 = ((a+1)*(rv+1)+b)*3,
+            i2 = ((a+1)*(rv+1)+b+1)*3, i3 = (a*(rv+1)+b+1)*3;
+      const zc = (P[i0+2]+P[i1+2]+P[i2+2]+P[i3+2])/4;
+      const M = (zc <= seaLvl) ? seaBand : landBand;
+      const bi = Math.floor((zc - seaLvl) / ci);      // bant = kontur aralığı
+      if (!M.has(bi)) M.set(bi, new Path2D());
+      cellPath(i0, i1, i2, i3, M.get(bi));
+    }
+
+  if (o.wash > 0){
+    ctx.globalAlpha = o.wash;
+    seaBand.forEach(function(path, bi){
+      const d = Math.min(1, Math.abs(bi) * ci / Math.max(1, seaLvl - o.zmin));
+      ctx.fillStyle = ramp(HYDRO, d);
+      ctx.fill(path);
+    });
+    landBand.forEach(function(path, bi){
+      ctx.fillStyle = ramp(HYPSO, (bi * ci) / (zTop - seaLvl));
+      ctx.fill(path);
+    });
+    ctx.globalAlpha = 1;
+  }
+  // su tarama çizgileri — kıyıyı okutur
+  const seaAll = new Path2D();
+  seaBand.forEach(function(p){ seaAll.addPath(p); });
+  if (seaBand.size) hatch(ctx, seaAll, 1.8, 0, 0.13, MODE === 'mono' ? '#ddd' : '#a8c8d8');
+
+  // --- model altlığı: ortografik üstten render ---
+  // Gölge modu: gri render'ı soft-light ile bindiriyoruz → sadece kabartma katar,
+  // renk bantlarda kalır. Renkli render'ı source-over ile bindirmek gölgeli
+  // bölgelerde doygunluğu 56'dan 36'ya düşürüyordu.
+  if (o.under && o.uop > 0){
+    const sq = state.site * k;
+    ctx.save();
+    ctx.globalAlpha = o.uop;
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    if (o.ushade) ctx.globalCompositeOperation = 'soft-light';
+    // kamera tam olarak [-half,half]² alanını kaplıyor → doğrudan aynı dikdörtgene otur
+    ctx.drawImage(o.under, X(-half), Y(half), sq, sq);
+    ctx.restore();
+  }
+
+  // konturlar
+  if (o.contours){
+    let lo = Math.ceil(o.zmin / ci) * ci, lv = 0;
+    for (let L = lo; L <= o.zmax && lv < 80; L += ci, lv++){
+      const major = Math.abs(L / (ci*5) - Math.round(L / (ci*5))) < 1e-6;
+      const segs = contourAt(P, ru, rv, L);
+      if (!segs.length) continue;
+      const lines = chainSegs(segs, (state.site/ru) * 0.25);
+      pen(ctx, major ? 'contourMj' : 'contour');
+      lines.forEach(function(pl){
+        ctx.beginPath();
+        ctx.moveTo(X(pl[0][0]), Y(pl[0][1]));
+        for (let i = 1; i < pl.length; i++) ctx.lineTo(X(pl[i][0]), Y(pl[i][1]));
+        ctx.stroke();
+      });
+      // kot etiketi — ana konturların ortasına, çizgiye teğet
+      if (major && o.levels){
+        lines.forEach(function(pl){
+          if (pl.length < 12) return;
+          const i = Math.floor(pl.length/2);
+          const p = pl[i], q = pl[Math.min(pl.length-1, i+1)];
+          let ang = Math.atan2(-(Y(q[1])-Y(p[1])), X(q[0])-X(p[0]));
+          if (ang > Math.PI/2 || ang < -Math.PI/2) ang += Math.PI;
+          const s = L.toFixed(0);
+          ctx.save();
+          ctx.translate(X(p[0]), Y(p[1])); ctx.rotate(-ang);
+          ctx.font = '500 2.2px "IBM Plex Mono", monospace';
+          const w = ctx.measureText(s).width;
+          ctx.globalAlpha = Math.max(0.35, 1 - FADE*0.6);
+          ctx.fillStyle = '#fff'; ctx.fillRect(-w/2-0.6, -1.4, w+1.2, 2.8);
+          ctx.fillStyle = '#5a4632'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillText(s, 0, 0);
+          ctx.globalAlpha = 1;
+          ctx.restore();
+        });
+      }
+    }
+  }
+
+  // kıyı çizgisi
+  const sh = contourAt(P, ru, rv, seaLvl);
+  if (sh.length){
+    pen(ctx, 'water');
+    ctx.beginPath();
+    for (let i = 0; i + 1 < sh.length; i += 2){
+      ctx.moveTo(X(sh[i][0]), Y(sh[i][1]));
+      ctx.lineTo(X(sh[i+1][0]), Y(sh[i+1][1]));
+    }
+    ctx.stroke();
+  }
+
+  // arsa sınırı — noktalı-kesikli, kalın
+  pen(ctx, 'cut', [6, 2, 1, 2]);
+  ctx.strokeRect(X(-half), Y(half), state.site*k, state.site*k);
+  ctx.setLineDash([]);
+
+  // ağaçlar
+  if (o.trees){
+    (state.treeIdx || []).forEach(function(i){
+      const p = state.moved[i];
+      if (!p) return;
+      const gz = S.heightAt(p[0], p[1]);
+      const r = (+$('tree_h').value) * 0.26 * k;
+      const above = gz > cutZ;
+      if (o.wash > 0 && !above && MODE !== 'mono'){
+        ctx.globalAlpha = o.wash * 0.7;
+        ctx.fillStyle = '#7ba883';
+        ctx.beginPath(); ctx.arc(X(p[0]), Y(p[1]), r, 0, Math.PI*2); ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+      pen(ctx, above ? 'hidden' : 'veg', above ? [1.2, 1.2] : null);
+      ctx.beginPath(); ctx.arc(X(p[0]), Y(p[1]), r, 0, Math.PI*2); ctx.stroke();
+      pen(ctx, 'thin');
+      ctx.beginPath();
+      ctx.moveTo(X(p[0])-r*0.3, Y(p[1])); ctx.lineTo(X(p[0])+r*0.3, Y(p[1]));
+      ctx.moveTo(X(p[0]), Y(p[1])-r*0.3); ctx.lineTo(X(p[0]), Y(p[1])+r*0.3);
+      ctx.stroke();
+    });
+  }
+
+  // kütleler — mimari kural: kesilen = kalın + poché, alttaki = orta, üstteki = kesikli
+  (state.masses || []).forEach(function(m){
+    const x0 = X(m.mn[0]), y0 = Y(m.mx[1]);
+    const w = (m.mx[0]-m.mn[0]) * k, h = (m.mx[1]-m.mn[1]) * k;
+    const isCut   = m.base < cutZ && m.top > cutZ;
+    const isAbove = m.base >= cutZ;
+    if (isCut){
+      ctx.fillStyle = MODE === 'mono' ? '#3a3a3a' : '#6d3b34';   // poché
+      ctx.fillRect(x0, y0, w, h);
+      pen(ctx, 'cut');
+      ctx.strokeRect(x0, y0, w, h);
+    } else if (isAbove){
+      pen(ctx, 'hidden', [2, 1.5]);
+      ctx.strokeRect(x0, y0, w, h);
+      ctx.setLineDash([]);
+    } else {
+      ctx.globalAlpha = MODE === 'mono' ? 1 : Math.max(0.5, o.wash);
+      ctx.fillStyle = MODE === 'mono' ? '#f2f2f2' : '#e6ded2';
+      ctx.fillRect(x0, y0, w, h);
+      ctx.globalAlpha = 1;
+      pen(ctx, 'visible');
+      ctx.strokeRect(x0, y0, w, h);
+      pen(ctx, 'thin');                    // çatı köşegeni: üstten görünüş işareti
+      ctx.beginPath();
+      ctx.moveTo(x0, y0); ctx.lineTo(x0+w, y0+h);
+      ctx.moveTo(x0+w, y0); ctx.lineTo(x0, y0+h);
+      ctx.stroke();
+    }
+    if (o.labels){
+      if (isVaz){
+        // vaziyet: çatı kotu içeride, zemin kotu altta — arazi etüdünün okunması için
+        txt(ctx, '+' + m.top.toFixed(2), x0 + w/2, y0 + h/2 - 1.3, 2.5, INK, 'center');
+        txt(ctx, '±' + m.ground.toFixed(2), x0 + w/2, y0 + h/2 + 1.9, 2.1, GREY, 'center');
+      } else {
+        const s = '+' + m.top.toFixed(1);
+        txt(ctx, s, x0 + w/2, y0 + h/2, 2.4, isCut ? '#fff' : INK, 'center');
+      }
+    }
+  });
+
+  // kot noktaları — vaziyet planının asıl bilgisi
+  if (isVaz && o.spots){
+    const n = state.ex + 1;
+    const spacingMm = (state.site / state.ex) * k;
+    // etiket sağa doğru ~8 mm uzanıyor ama sadece ~2.6 mm yüksek:
+    // yatayda seyrek, dikeyde sık olmalı — tek adım ikisine birden uymuyor
+    const stepX = Math.max(1, Math.ceil(11 / spacingMm));
+    const stepY = Math.max(1, Math.ceil(4.5 / spacingMm));
+    for (let i = 0; i < n; i += stepX)
+      for (let j = 0; j < n; j += stepY){
+        const p = state.moved[i*n + j];
+        if (!p) continue;
+        const gz = S.heightAt(p[0], p[1]);
+        if (gz < seaLvl) continue;                          // su altına kot yazılmaz
+        const px = X(p[0]), py = Y(p[1]);
+        pen(ctx, 'thin');
+        ctx.beginPath();
+        ctx.moveTo(px-0.8, py); ctx.lineTo(px+0.8, py);
+        ctx.moveTo(px, py-0.8); ctx.lineTo(px, py+0.8);
+        ctx.stroke();
+        const s = (gz >= 0 ? '+' : '') + gz.toFixed(2);
+        ctx.font = '500 2.1px "IBM Plex Mono", monospace';
+        const tw = ctx.measureText(s).width;
+        ctx.globalAlpha = 0.75;
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(px + 1, py - 2.4, tw + 0.8, 2.6);
+        ctx.globalAlpha = 1;
+        txt(ctx, s, px + 1.4, py - 1.1, 2.1, '#3a3a3a');
+      }
+  }
+
+  // nokta numaraları
+  if (o.nums){
+    state.moved.forEach(function(p, i){
+      pen(ctx, 'thin');
+      ctx.beginPath();
+      ctx.moveTo(X(p[0])-0.7, Y(p[1])); ctx.lineTo(X(p[0])+0.7, Y(p[1]));
+      ctx.moveTo(X(p[0]), Y(p[1])-0.7); ctx.lineTo(X(p[0]), Y(p[1])+0.7);
+      ctx.stroke();
+      txt(ctx, String(i), X(p[0])+1.1, Y(p[1])-1.1, 1.7, '#999');
+    });
+  }
+
+  // kesit çizgisi işareti (A—A)
+  if (o.markSection){
+    const ax = viewAxes(o.secAng), pos = o.secPos;
+    const c = [ax.n[0]*pos, ax.n[1]*pos], L = half*1.5;
+    const a = [c[0]-ax.r[0]*L, c[1]-ax.r[1]*L], b = [c[0]+ax.r[0]*L, c[1]+ax.r[1]*L];
+    pen(ctx, 'secmark', [8, 2, 2, 2]);
+    ctx.beginPath(); ctx.moveTo(X(a[0]), Y(a[1])); ctx.lineTo(X(b[0]), Y(b[1])); ctx.stroke();
+    ctx.setLineDash([]);
+    [[a,-1],[b,1]].forEach(function(e){
+      const p = e[0];
+      // bakış oku
+      pen(ctx, 'secmark'); ctx.lineWidth = LW.visible;
+      ctx.beginPath();
+      ctx.moveTo(X(p[0]), Y(p[1]));
+      ctx.lineTo(X(p[0]) + ax.n[0]*5, Y(p[1]) - ax.n[1]*5);
+      ctx.stroke();
+      txt(ctx, 'A', X(p[0]) + ax.n[0]*7, Y(p[1]) - ax.n[1]*7, 3.4, '#c0392b', 'center');
+    });
+  }
+
+  return {
+    scale: scale,
+    title: isVaz ? 'VAZİYET PLANI' : 'PLAN  +' + cutZ.toFixed(2)
+  };
+}
+
+/* --- KESİT / GÖRÜNÜŞ --- */
+function drawSection(ctx, G, o){
+  const S = state.S, half = state.site/2, seaLvl = o.seaLvl;
+  const isElev = o.mode === 'elev';
+  const ax = viewAxes(o.ang);
+  const pos = isElev ? -half*1.45 : o.pos;
+
+  const prof = isElev ? terrainSilhouette(S, ax, half, 220)
+                      : terrainProfile(S, ax, pos, half, 220);
+  const pts = prof.filter(Boolean);
+  if (!pts.length) return { scale:100, title:'—', empty:true };
+
+  let t0 = 1e9, t1 = -1e9, z0 = 1e9, z1 = -1e9;
+  pts.forEach(function(p){
+    t0 = Math.min(t0, p.t); t1 = Math.max(t1, p.t);
+    z0 = Math.min(z0, p.z); z1 = Math.max(z1, p.z);
+  });
+  (state.masses || []).forEach(function(m){
+    const pr = projectBox(m, ax, pos);
+    if (pr.dFar < 0) return;
+    t0 = Math.min(t0, pr.t0); t1 = Math.max(t1, pr.t1);
+    z1 = Math.max(z1, m.top);
+  });
+  z0 = Math.min(z0, seaLvl) - 2; z1 += 3;
+  const padT = (t1-t0) * 0.04; t0 -= padT; t1 += padT;
+
+  const scale = pickScale(t1-t0, z1-z0, G.area);
+  const k = 1000 / scale;
+  const ox = G.area.x + G.area.w/2 - ((t0+t1)/2)*k;
+  const oy = G.area.y + G.area.h/2 + ((z0+z1)/2)*k;
+  const X = function(t){ return ox + t*k; };
+  const Y = function(z){ return oy - z*k; };
+  const baseY = Y(z0);
+
+  // --- deniz ---
+  const seaPath = new Path2D();
+  seaPath.rect(X(t0), Y(seaLvl), (t1-t0)*k, baseY - Y(seaLvl));
+  ctx.save();
+  ctx.beginPath(); ctx.rect(X(t0), Y(seaLvl), (t1-t0)*k, baseY - Y(seaLvl)); ctx.clip();
+  ctx.globalAlpha = o.wash;
+  ctx.fillStyle = MODE === 'mono' ? '#f4f7f8' : ramp(HYDRO, 0.45);
+  ctx.fillRect(X(t0), Y(seaLvl), (t1-t0)*k, baseY - Y(seaLvl));
+  ctx.globalAlpha = 1;
+  penSet(ctx, 0.13, MODE === 'mono' ? '#ddd' : '#a8c8d8');
+  ctx.beginPath();
+  for (let yy = Y(seaLvl) + 1.4; yy < baseY; yy += 1.4){
+    ctx.moveTo(X(t0), yy); ctx.lineTo(X(t1), yy);
+  }
+  ctx.stroke();
+  ctx.restore();
+  pen(ctx, 'water');
+  ctx.beginPath(); ctx.moveTo(X(t0), Y(seaLvl)); ctx.lineTo(X(t1), Y(seaLvl)); ctx.stroke();
+  txt(ctx, '± ' + seaLvl.toFixed(2) + '  deniz', X(t0) + 1.5, Y(seaLvl) - 2, 2.4,
+      MODE === 'mono' ? INK : PENS.water.col);
+
+  // --- arazi gövdesi ---
+  const land = new Path2D();
+  let started = false;
+  prof.forEach(function(p){
+    if (!p){ started = false; return; }
+    if (!started){ land.moveTo(X(p.t), baseY); land.lineTo(X(p.t), Y(p.z)); started = true; }
+    else land.lineTo(X(p.t), Y(p.z));
+  });
+  const last = pts[pts.length-1];
+  land.lineTo(X(last.t), baseY);
+  land.closePath();
+  ctx.fillStyle = '#fff'; ctx.fill(land);
+  // planla aynı hipsometrik bantlar — kesit ile plan renk olarak eşleşsin
+  if (o.wash > 0 && MODE !== 'mono'){
+    ctx.save(); ctx.clip(land);
+    ctx.globalAlpha = o.wash;
+    const zTop2 = Math.max(o.zmax, seaLvl + 0.001);
+    for (let z = seaLvl; z < z1; z += o.ci){
+      ctx.fillStyle = ramp(HYPSO, (z - seaLvl) / (zTop2 - seaLvl));
+      ctx.fillRect(X(t0), Y(z + o.ci), (t1-t0)*k, o.ci*k);
+    }
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+  if (!isElev) hatch(ctx, land, 1.5, 45, 0.13, MODE === 'mono' ? '#b3b3b3' : '#a08b6a');
+  else { ctx.save(); ctx.clip(land); ctx.globalAlpha = 0.35;
+         ctx.fillStyle = MODE === 'mono' ? '#f4f4f2' : '#d8cbb4';
+         ctx.fillRect(X(t0), Y(z1), (t1-t0)*k, baseY-Y(z1));
+         ctx.globalAlpha = 1; ctx.restore(); }
+
+  // --- arkadaki kütleler (görünüş) — uzaktan yakına, beyaz dolgu ile örtüşsün ---
+  const back = (state.masses || []).map(function(m){
+    return { m:m, pr:projectBox(m, ax, pos) };
+  }).filter(function(e){
+    const cut = !isElev && e.pr.dNear <= 0 && e.pr.dFar >= 0;
+    return !cut && e.pr.dNear > 0;
+  }).sort(function(a, b){ return b.pr.dNear - a.pr.dNear; });
+
+  back.forEach(function(e){
+    const m = e.m, pr = e.pr;
+    const occ = occluderZ(S, m, ax, pos, half);      // önündeki arazi
+    if (occ >= m.top) return;                         // tamamen tepenin arkasında
+    const zb = Math.max(m.base, occ);
+    const far = pr.dNear > half * 0.6;
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(X(pr.t0), Y(m.top), (pr.t1-pr.t0)*k, (m.top-zb)*k);
+    if (MODE !== 'mono'){
+      ctx.globalAlpha = Math.max(0.45, o.wash) * (far ? 0.6 : 1);
+      ctx.fillStyle = '#e6ded2';
+      ctx.fillRect(X(pr.t0), Y(m.top), (pr.t1-pr.t0)*k, (m.top-zb)*k);
+      ctx.globalAlpha = 1;
+    }
+    pen(ctx, far ? 'hidden' : 'visible');
+    ctx.strokeRect(X(pr.t0), Y(m.top), (pr.t1-pr.t0)*k, (m.top-zb)*k);
+    // kat çizgileri
+    const fh = +$('fh').value;
+    pen(ctx, 'thin');
+    ctx.beginPath();
+    for (let z = m.base + fh; z < m.top - 0.01; z += fh){
+      if (z <= zb) continue;
+      ctx.moveTo(X(pr.t0), Y(z)); ctx.lineTo(X(pr.t1), Y(z));
+    }
+    ctx.stroke();
+  });
+
+  // --- kesilen kütleler: kalın + poché ---
+  if (!isElev){
+    const c = [ax.n[0]*pos, ax.n[1]*pos];
+    (state.masses || []).forEach(function(m){
+      const iv = clipRect(c, ax.r, [m.mn[0], m.mn[1]], [m.mx[0], m.mx[1]]);
+      if (!iv) return;
+      const x = X(iv[0]), w = (iv[1]-iv[0])*k;
+      const y = Y(m.top), h = (m.top-m.base)*k;
+      ctx.fillStyle = MODE === 'mono' ? '#3a3a3a' : '#6d3b34'; ctx.fillRect(x, y, w, h);
+      pen(ctx, 'cut'); ctx.strokeRect(x, y, w, h);
+      const fh = +$('fh').value;
+      penSet(ctx, 0.13, '#b09a90');
+      ctx.beginPath();
+      for (let z = m.base + fh; z < m.top - 0.01; z += fh){
+        ctx.moveTo(x, Y(z)); ctx.lineTo(x + w, Y(z));
+      }
+      ctx.stroke();
+      txt(ctx, '+' + m.top.toFixed(2), x + w/2, y - 2.4, 2.4, INK, 'center');
+    });
+  }
+
+  // --- arazi çizgisi (kesit hattı) ---
+  pen(ctx, isElev ? 'visible' : 'cut');
+  ctx.beginPath();
+  started = false;
+  prof.forEach(function(p){
+    if (!p){ started = false; return; }
+    if (!started){ ctx.moveTo(X(p.t), Y(p.z)); started = true; }
+    else ctx.lineTo(X(p.t), Y(p.z));
+  });
+  ctx.stroke();
+
+  // --- ağaçlar (arkada) ---
+  if (o.trees){
+    const h0 = +$('tree_h').value;
+    (state.treeIdx || []).forEach(function(i){
+      const p = state.moved[i];
+      if (!p) return;
+      const d = p[0]*ax.n[0] + p[1]*ax.n[1] - pos;
+      if (d <= 0) return;
+      const t = p[0]*ax.r[0] + p[1]*ax.r[1];
+      const gz = S.heightAt(p[0], p[1]);
+      if (gz < seaLvl) return;
+      const r = h0*0.26*k, hh = h0*k;
+      if (o.wash > 0 && MODE !== 'mono'){
+        ctx.globalAlpha = o.wash * 0.7; ctx.fillStyle = '#7ba883';
+        ctx.beginPath();
+        ctx.moveTo(X(t)-r, Y(gz) - hh*0.38);
+        ctx.lineTo(X(t), Y(gz) - hh);
+        ctx.lineTo(X(t)+r, Y(gz) - hh*0.38);
+        ctx.closePath(); ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+      pen(ctx, 'veg'); ctx.lineWidth = LW.hidden;
+      ctx.beginPath();
+      ctx.moveTo(X(t), Y(gz)); ctx.lineTo(X(t), Y(gz) - hh*0.4);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(X(t)-r, Y(gz) - hh*0.38);
+      ctx.lineTo(X(t), Y(gz) - hh);
+      ctx.lineTo(X(t)+r, Y(gz) - hh*0.38);
+      ctx.closePath(); ctx.stroke();
+    });
+  }
+
+  // --- kot işaretleri ---
+  if (o.levels){
+    const ci = Math.max(1, Math.round((z1-z0)/8));
+    pen(ctx, 'thin');
+    for (let z = Math.ceil(z0/ci)*ci; z <= z1; z += ci){
+      ctx.setLineDash([4, 2]);
+      ctx.beginPath(); ctx.moveTo(X(t0), Y(z)); ctx.lineTo(X(t1), Y(z)); ctx.stroke();
+      ctx.setLineDash([]);
+      // kot üçgeni
+      const xx = X(t1) + 2;
+      penSet(ctx, LW.visible, '#444');
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.moveTo(xx, Y(z)); ctx.lineTo(xx+2.4, Y(z)-1.4); ctx.lineTo(xx+2.4, Y(z)+1.4);
+      ctx.closePath(); ctx.fillStyle = '#444'; ctx.fill();
+      txt(ctx, (z >= 0 ? '+' : '') + z.toFixed(2), xx + 4, Y(z), 2.4, '#444');
+      pen(ctx, 'thin');
+    }
+  }
+
+  return {
+    scale: scale,
+    title: isElev ? ('GÖRÜNÜŞ  ' + o.ang + '°') : ('KESİT A—A  ' + o.ang + '°')
+  };
+}
+
+/* --- sayfayı çiz --- */
+function drawSheet(ctx, pxPerMm, paper, dpi){
+  const G = sheetGeom(paper);
+  const type0 = $('dw_type').value;
+  // Altlık, kağıttaki gerçek piksel boyutunda alınsın ki dışa aktarımda bulanmasın.
+  // Çizim alana sığdırıldığı için arsa en fazla alanın kısa kenarı kadar yer kaplar.
+  const underPx = Math.min(G.area.w, G.area.h) * pxPerMm;
+  const ushade = $('dw_umode').value === 'golge';
+  const underImg = ((type0 === 'vaz' || type0 === 'plan') && $('dw_under').checked)
+    ? topViewCanvas(underPx, ushade) : null;
+  ctx.save();
+  ctx.scale(pxPerMm, pxPerMm);
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, G.W, G.H);
+  ctx.lineJoin = 'round'; ctx.lineCap = 'butt';
+
+  const type = $('dw_type').value;
+  MODE = $('dw_mode').value;
+  WASH = +$('dw_wash').value;
+  FADE = +$('dw_fade').value;
+  const o = {
+    wash:   WASH,
+    seaLvl: +$('sea_lvl').value,
+    cutZ:   +$('dw_z').value,
+    ci:     +$('ci').value,
+    ang:    +$('dw_ang').value,
+    pos:    +$('dw_pos').value,
+    secAng: +$('dw_ang').value,
+    secPos: +$('dw_pos').value,
+    mode:   type === 'elev' ? 'elev' : 'sec',
+    isVaz:    type === 'vaz',
+    under:    underImg,
+    ushade:   ushade,
+    uop:      +$('dw_uop').value,
+    spots:    $('dw_spot').checked,
+    contours: $('dw_con').checked,
+    trees:    $('dw_tree').checked,
+    nums:     $('dw_num').checked,
+    levels:   $('dw_lev').checked,
+    labels:   $('dw_lab').checked,
+    markSection: (type === 'plan' || type === 'vaz') && $('dw_mark').checked,
+    P: state.P, ru: state.ru, rv: state.rv,
+    zmin: state.zmin, zmax: state.zmax
+  };
+
+  let r;
+  if (!state.S || !state.S.heightAt){
+    txt(ctx, 'Yüzey kurulamadı — U Count değerini kontrol edin.', G.W/2, G.H/2, 5, INK, 'center');
+    r = { scale:100, title:'—' };
+  } else {
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(G.area.x, G.area.y, G.area.w, G.area.h);
+    ctx.clip();
+    r = (type === 'plan' || type === 'vaz') ? drawPlan(ctx, G, o)
+                                            : drawSection(ctx, G, o);
+    ctx.restore();
+  }
+
+  // ölçek çubuğu birimi: 1:200 → 10m, 1:500 → 20m ...
+  // ölçek çubuğu birimi: çubuk daima ~40 mm olsun, yoksa alt şeridi yer
+  const UNITS = [1, 2, 5, 10, 20, 25, 50, 100, 200, 500];
+  const want = r.scale / 100;
+  const barUnit = UNITS.reduce(function(a, b){
+    return Math.abs(b - want) < Math.abs(a - want) ? b : a;
+  });
+  drawFrame(ctx, G, {
+    title: r.title, scale: r.scale, paper: paper, dpi: dpi,
+    north: type === 'plan' || type === 'vaz', barUnit: barUnit,
+    hypso: WASH > 0 && MODE !== 'mono',
+    seaLvl: o.seaLvl, zmax: state.zmax || 20, ci: o.ci,
+    note: MODE === 'kalem'
+      ? 'Çizgiler ISO 9175-1 kalem renk koduna göre. Beyaz (0.25) ve sarı (0.35) ' +
+        'kağıtta okunmadığı için tonları korunup değerleri koyulaştırıldı.'
+      : type === 'vaz'
+        ? 'Ortografik izdüşüm · 1 birim = 1 m · kot bantları kontur aralığıyla hizalı' +
+          (underImg ? (ushade
+            ? ' · kabartma gölgesi modelin üstten render\u0027ından, güneş açısına göre'
+            : ' · altlık: modelin renkli üstten render\u0027ı') : '')
+        : 'Ortografik izdüşüm · ISO kalem kalınlıkları · 1 birim = 1 m · ' +
+          'kesilen kütle poché · kesikli = kesit düzleminin üstünde'
+  });
+  ctx.restore();
+  return r;
+}
+
+/* ================= OBJ dışa aktarma ================= */
+
+// Wavefront OBJ birikteci. Köşeler paylaşımlı, indisler 1-tabanlı,
+// eksen dönüşümü ve ölçek tek yerde yapılır.
+function objNew(axis, unit){
+  return { L:[], nv:0, nn:0, ax:axis, k:unit };
+}
+function objV(o, x, y, z){
+  const k = o.k;
+  // Z-yukarı (Rhino/Blender) → Y-yukarı (Maya/Unity):  (x,y,z) → (x, z, −y)
+  const a = o.ax === 'y' ? [x*k, z*k, -y*k] : [x*k, y*k, z*k];
+  o.L.push('v ' + a[0].toFixed(4) + ' ' + a[1].toFixed(4) + ' ' + a[2].toFixed(4));
+  return ++o.nv;
+}
+function objN(o, x, y, z){
+  let L = Math.hypot(x, y, z) || 1;
+  x /= L; y /= L; z /= L;
+  const a = o.ax === 'y' ? [x, z, -y] : [x, y, z];
+  o.L.push('vn ' + a[0].toFixed(4) + ' ' + a[1].toFixed(4) + ' ' + a[2].toFixed(4));
+  return ++o.nn;
+}
+function objF(o, vs, ns){
+  const p = [];
+  for (let i = 0; i < vs.length; i++) p.push(vs[i] + '//' + (ns.length === 1 ? ns[0] : ns[i]));
+  o.L.push('f ' + p.join(' '));
+}
+function objFTri(o, vs, ns){        // dörtgeni ikiye böl
+  objF(o, [vs[0], vs[1], vs[2]], ns.length === 1 ? ns : [ns[0], ns[1], ns[2]]);
+  objF(o, [vs[0], vs[2], vs[3]], ns.length === 1 ? ns : [ns[0], ns[2], ns[3]]);
+}
+
+function objBox(o, mn, mx, quad){
+  const V = [
+    objV(o, mn[0], mn[1], mn[2]), objV(o, mx[0], mn[1], mn[2]),
+    objV(o, mx[0], mx[1], mn[2]), objV(o, mn[0], mx[1], mn[2]),
+    objV(o, mn[0], mn[1], mx[2]), objV(o, mx[0], mn[1], mx[2]),
+    objV(o, mx[0], mx[1], mx[2]), objV(o, mn[0], mx[1], mx[2])
+  ];
+  const N = [
+    objN(o, 0,0,-1), objN(o, 0,0,1), objN(o, 0,-1,0),
+    objN(o, 1,0,0), objN(o, 0,1,0), objN(o, -1,0,0)
+  ];
+  // sarım dışa bakacak şekilde
+  const faces = [
+    [[V[0],V[3],V[2],V[1]], N[0]],   // alt  (−z)
+    [[V[4],V[5],V[6],V[7]], N[1]],   // üst  (+z)
+    [[V[0],V[1],V[5],V[4]], N[2]],   // −y
+    [[V[1],V[2],V[6],V[5]], N[3]],   // +x
+    [[V[2],V[3],V[7],V[6]], N[4]],   // +y
+    [[V[3],V[0],V[4],V[7]], N[5]]    // −x
+  ];
+  faces.forEach(function(f){
+    if (quad) objF(o, f[0], [f[1]]); else objFTri(o, f[0], [f[1]]);
+  });
+}
+
+function objCone(o, cx, cy, z0, r, h, seg, quad){
+  const base = [];
+  for (let i = 0; i < seg; i++){
+    const a = i/seg * Math.PI*2;
+    base.push(objV(o, cx + r*Math.cos(a), cy + r*Math.sin(a), z0));
+  }
+  const apex = objV(o, cx, cy, z0 + h);
+  const nd = objN(o, 0, 0, -1);
+  for (let i = 0; i < seg; i++){
+    const j = (i+1) % seg;
+    const a = (i + 0.5)/seg * Math.PI*2;
+    const nl = objN(o, h*Math.cos(a), h*Math.sin(a), r);   // yan yüz normali
+    objF(o, [base[i], base[j], apex], [nl]);
+  }
+  for (let i = 1; i + 1 < seg; i++) objF(o, [base[0], base[i+1], base[i]], [nd]);
+}
+
+function objCyl(o, cx, cy, z0, r0, r1, h, seg, quad){
+  const lo = [], hi = [];
+  for (let i = 0; i < seg; i++){
+    const a = i/seg * Math.PI*2;
+    lo.push(objV(o, cx + r0*Math.cos(a), cy + r0*Math.sin(a), z0));
+    hi.push(objV(o, cx + r1*Math.cos(a), cy + r1*Math.sin(a), z0 + h));
+  }
+  const nd = objN(o, 0,0,-1), nu = objN(o, 0,0,1);
+  for (let i = 0; i < seg; i++){
+    const j = (i+1) % seg;
+    const a = (i + 0.5)/seg * Math.PI*2;
+    const nl = objN(o, Math.cos(a), Math.sin(a), 0);
+    if (quad) objF(o, [lo[i], lo[j], hi[j], hi[i]], [nl]);
+    else objFTri(o, [lo[i], lo[j], hi[j], hi[i]], [nl]);
+  }
+  for (let i = 1; i + 1 < seg; i++){
+    objF(o, [lo[0], lo[i+1], lo[i]], [nd]);
+    objF(o, [hi[0], hi[i], hi[i+1]], [nu]);
+  }
+}
+
+// arazi: B-spline yüzeyden düzenli dörtgen ağ, normaller komşu farklarından
+function objTerrain(o, S, res, quad, solid, seaLvl){
+  const n = res, W = n + 1;
+  const X = new Float64Array(W*W), Y = new Float64Array(W*W), Z = new Float64Array(W*W);
+  for (let a = 0; a <= n; a++)
+    for (let b = 0; b <= n; b++){
+      const q = S(a/n, b/n), i = a*W + b;
+      X[i] = q[0]; Y[i] = q[1]; Z[i] = q[2];
+    }
+  const base = o.nv, nbase = o.nn;
+  for (let a = 0; a <= n; a++)
+    for (let b = 0; b <= n; b++) objV(o, X[a*W+b], Y[a*W+b], Z[a*W+b]);
+  // normal = tu × tv (merkezî fark; kenarlarda tek yönlü)
+  for (let a = 0; a <= n; a++)
+    for (let b = 0; b <= n; b++){
+      const a0 = Math.max(0, a-1), a1 = Math.min(n, a+1);
+      const b0 = Math.max(0, b-1), b1 = Math.min(n, b+1);
+      const i0 = a0*W+b, i1 = a1*W+b, j0 = a*W+b0, j1 = a*W+b1;
+      const tu = [X[i1]-X[i0], Y[i1]-Y[i0], Z[i1]-Z[i0]];
+      const tv = [X[j1]-X[j0], Y[j1]-Y[j0], Z[j1]-Z[j0]];
+      objN(o, tu[1]*tv[2]-tu[2]*tv[1], tu[2]*tv[0]-tu[0]*tv[2], tu[0]*tv[1]-tu[1]*tv[0]);
+    }
+  const id = function(a, b){ return base + a*W + b + 1; };
+  const nid = function(a, b){ return nbase + a*W + b + 1; };
+  for (let a = 0; a < n; a++)
+    for (let b = 0; b < n; b++){
+      const v = [id(a,b), id(a+1,b), id(a+1,b+1), id(a,b+1)];
+      const s = [nid(a,b), nid(a+1,b), nid(a+1,b+1), nid(a,b+1)];
+      if (quad) objF(o, v, s); else objFTri(o, v, s);
+    }
+
+  if (!solid) return;
+
+  // etek + taban → kapalı katı (maket / baskı için)
+  let zmin = Infinity;
+  for (let i = 0; i < Z.length; i++) if (Z[i] < zmin) zmin = Z[i];
+  const bz = Math.min(zmin, seaLvl) - state.site * 0.14;
+  const ring = [];
+  for (let a = 0; a <= n; a++)     ring.push([a, 0]);
+  for (let b = 1; b <= n; b++)     ring.push([n, b]);
+  for (let a = n-1; a >= 0; a--)   ring.push([a, n]);
+  for (let b = n-1; b >= 1; b--)   ring.push([0, b]);
+
+  const bot = ring.map(function(e){ return objV(o, X[e[0]*W+e[1]], Y[e[0]*W+e[1]], bz); });
+  for (let i = 0; i < ring.length; i++){
+    const j = (i+1) % ring.length;
+    const e = ring[i], f = ring[j];
+    const p1 = [X[e[0]*W+e[1]], Y[e[0]*W+e[1]]], p2 = [X[f[0]*W+f[1]], Y[f[0]*W+f[1]]];
+    const nl = objN(o, p2[1]-p1[1], -(p2[0]-p1[0]), 0);   // CCW halkada dışa bakan yan normal
+    // Sarım arazininkinin TERSİ olmalı: arazi sınır kenarını i→j geziyor,
+    // etek j→i gezmeli — yoksa kapalı mesh tutarsız olur.
+    const v = [id(f[0],f[1]), id(e[0],e[1]), bot[i], bot[j]];
+    if (quad) objF(o, v, [nl]); else objFTri(o, v, [nl]);
+  }
+  // taban: ağırlık merkezinden yelpaze. bot[0]'dan yelpazelenirse aynı kenardaki
+  // noktalar doğrusal olduğu için sıfır alanlı üçgenler çıkıyordu.
+  let cx = 0, cy = 0;
+  ring.forEach(function(e){ cx += X[e[0]*W+e[1]]; cy += Y[e[0]*W+e[1]]; });
+  cx /= ring.length; cy /= ring.length;
+  const ctr = objV(o, cx, cy, bz);
+  const nd = objN(o, 0, 0, -1);
+  for (let i = 0; i < bot.length; i++){
+    const j = (i+1) % bot.length;
+    objF(o, [ctr, bot[j], bot[i]], [nd]);   // yukarıdan CW = alttan CCW → normal −z
+  }
+}
+
+function buildOBJ(){
+  const S = state.S;
+  if (!S) return null;
+  const res  = +$('obj_res').value;
+  const quad = $('obj_face').value === 'quad';
+  const unit = { m:1, cm:100, mm:1000 }[$('obj_unit').value];
+  const axis = $('obj_axis').value;
+  const seaLvl = +$('sea_lvl').value;
+  const o = objNew(axis, unit);
+
+  o.L.push('# GH_TOP — kıyı arazisi');
+  o.L.push('# Grasshopper tanımından üretildi, B-spline yüzeyden yeniden örneklendi');
+  o.L.push('# arazi ağı: ' + res + '×' + res + ' ' + (quad ? 'dörtgen' : 'üçgen'));
+  o.L.push('# eksen: ' + (axis === 'y' ? 'Y yukarı' : 'Z yukarı') +
+           ' · birim: 1 m = ' + unit + ' ' + $('obj_unit').value);
+  o.L.push('');
+
+  if ($('obj_ter').checked){
+    o.L.push('o arazi');
+    objTerrain(o, S, res, quad, $('obj_solid').checked, seaLvl);
+    o.L.push('');
+  }
+  if ($('obj_mass').checked && (state.masses || []).length){
+    (state.masses || []).forEach(function(m, i){
+      o.L.push('o kutle_' + m.idx);
+      objBox(o, m.mn, m.mx, quad);
+    });
+    o.L.push('');
+  }
+  if ($('obj_tree').checked && (state.treeIdx || []).length){
+    const h0 = +$('tree_h').value;
+    const rnd = mulberry32(+$('seed').value * 7 + 13);
+    (state.treeIdx || []).forEach(function(i){
+      const p = state.moved[i];
+      if (!p) return;
+      const gz = S.heightAt(p[0], p[1]);
+      const h = h0 * (0.7 + rnd() * 0.6);
+      rnd(); rnd();                                  // 3B'deki ile aynı sırayı tut
+      if (gz < seaLvl) return;
+      o.L.push('o agac_' + i);
+      objCyl(o, p[0], p[1], gz, h*0.045, h*0.07, h*0.37, 6, quad);
+      objCone(o, p[0], p[1], gz + h*0.35, h*0.26, h*0.65, 7, quad);
+    });
+    o.L.push('');
+  }
+  if ($('obj_sea').checked){
+    const h = state.site/2;
+    o.L.push('o deniz');
+    const v = [objV(o, -h,-h,seaLvl), objV(o, h,-h,seaLvl),
+               objV(o, h,h,seaLvl),   objV(o, -h,h,seaLvl)];
+    const nn = objN(o, 0,0,1);
+    if (quad) objF(o, v, [nn]); else objFTri(o, v, [nn]);
+  }
+  return o;
+}
+
+const stats = { box:0, tree:0, wrapped:0, drowned:0 };
+
+/* ================= Analiz ================= */
+
+// ışın–AABB (slab yöntemi)
+function rayBox(o, d, mn, mx, tmax){
+  let t0 = 0.02, t1 = tmax;
+  for (let a = 0; a < 3; a++){
+    if (Math.abs(d[a]) < 1e-9){
+      if (o[a] < mn[a] || o[a] > mx[a]) return Infinity;
+      continue;
+    }
+    const inv = 1 / d[a];
+    let ta = (mn[a] - o[a]) * inv, tb = (mx[a] - o[a]) * inv;
+    if (ta > tb){ const s = ta; ta = tb; tb = s; }
+    if (ta > t0) t0 = ta;
+    if (tb < t1) t1 = tb;
+    if (t0 > t1) return Infinity;
+  }
+  return t0;
+}
+
+// ışının önündeki ilk engelin mesafesi (arazi + diğer kütleler)
+function blockDist(o, d, tmax, skip){
+  let best = Infinity;
+  const M = state.masses || [];
+  for (let i = 0; i < M.length; i++){
+    if (i === skip) continue;
+    const t = rayBox(o, d, M[i].mn, M[i].mx, tmax);
+    if (t < best) best = t;
+  }
+  const S = state.S;
+  if (S && S.heightAt){
+    const half = state.site / 2, step = state.site / 70;
+    for (let t = step; t < Math.min(tmax, best); t += step){
+      const x = o[0] + d[0]*t, y = o[1] + d[1]*t, z = o[2] + d[2]*t;
+      if (Math.abs(x) > half || Math.abs(y) > half) break;   // arsa dışı → engel yok
+      if (S.heightAt(x, y) > z){ best = Math.min(best, t); break; }
+    }
+  }
+  return best;
+}
+
+function analyze(){
+  const M = state.masses || [];
+  if (!M.length) return;
+  const fh = +$('fh').value;
+  const seaLvl = +$('sea_lvl').value;
+  const seaDir = +$('sea_dir').value * D2R;
+  const sv = sunVec(), sunAlt = +$('sun_alt').value;
+  const wd = +$('wind_dir').value * D2R;
+  const upwind = [Math.sin(wd), Math.cos(wd), 0];   // rüzgarın geldiği yön
+  const reach = state.site * 1.6;
+  const S = state.S;
+
+  for (let i = 0; i < M.length; i++){
+    const m = M[i];
+    m.foot   = (m.s[0]*2) * (m.s[1]*2);
+    m.height = m.s[2]*2;
+    m.floors = Math.max(1, Math.floor(m.height / fh));
+    m.gfa    = m.foot * m.floors;
+    m.vol    = m.foot * m.height;
+
+    // --- kazı / dolfu: taban düzlemi araziye ne kadar uyuyor
+    let cut = 0, fill = 0, dsum = 0, n = 0;
+    if (S && S.heightAt){
+      const N = 5;
+      for (let a = 0; a < N; a++)
+        for (let b = 0; b < N; b++){
+          const x = m.p[0] - m.s[0] + (2*m.s[0]) * (a/(N-1));
+          const y = m.p[1] - m.s[1] + (2*m.s[1]) * (b/(N-1));
+          const dz = S.heightAt(x, y) - m.base;   // + → arazi tabanın üstünde = kazı
+          if (dz > cut) cut = dz;
+          if (-dz > fill) fill = -dz;
+          dsum += Math.abs(dz); n++;
+        }
+    }
+    m.cut = cut; m.fill = fill;
+    m.earth = n ? (dsum / n) * m.foot : 0;   // yaklaşık kazı+dolgu hacmi
+
+    // --- deniz manzarası: çatı kotundan denize doğru yelpaze
+    let open = 0, total = 0;
+    const top = [m.p[0], m.p[1], m.top + 0.5];
+    m.fan = [];
+    for (let k = -4; k <= 4; k++){
+      const a = seaDir + k * 10 * D2R;
+      const d = [Math.sin(a), Math.cos(a), 0];
+      const t = blockDist(top, d, reach, i);
+      const ok = !isFinite(t);
+      if (ok) open++;
+      total++;
+      const end = isFinite(t) ? t : reach * 0.62;
+      m.fan.push({ ok:ok, e:[top[0]+d[0]*end, top[1]+d[1]*end, top[2]] });
+    }
+    m.view = open / total;
+
+    // --- güneşlenme: çatı merkezi + 4 çatı köşesi
+    if (sunAlt <= 0.5) m.sun = 0;
+    else {
+      let lit = 0;
+      const pts = [[0,0],[-.7,-.7],[.7,-.7],[.7,.7],[-.7,.7]];
+      for (let k = 0; k < pts.length; k++){
+        const o = [m.p[0] + pts[k][0]*m.s[0], m.p[1] + pts[k][1]*m.s[1], m.top + 0.05];
+        if (!isFinite(blockDist(o, [sv.x, sv.y, sv.z], reach, i))) lit++;
+      }
+      m.sun = lit / pts.length;
+    }
+
+    // --- rüzgar: rüzgar yönünde önünde engel var mı
+    const mid = [m.p[0], m.p[1], m.base + m.height * 0.6];
+    const wt = blockDist(mid, upwind, state.site * 0.9, i);
+    m.shelter = isFinite(wt) ? wt : Infinity;
+
+    // --- mesafeler
+    m.dSea = Infinity;
+    const sh = state.shoreSeg || [];
+    for (let k = 0; k + 1 < sh.length; k += 2){
+      const d = segDist(m.p[0], m.p[1], sh[k], sh[k+1]);
+      if (d < m.dSea) m.dSea = d;
+    }
+    m.underwater = m.base < seaLvl;
+    m.seated = Math.abs(m.zoff) < 0.05;   // oturması bekleniyor mu
+  }
+}
+
+function segDist(px, py, a, b){
+  const vx = b[0]-a[0], vy = b[1]-a[1];
+  const L = vx*vx + vy*vy;
+  let t = L ? ((px-a[0])*vx + (py-a[1])*vy) / L : 0;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(px - (a[0]+vx*t), py - (a[1]+vy*t));
+}
+
+/* --- renk rampaları --- */
+const RAMP = {
+  cool: [[0.16,0.29,0.42],[0.50,0.83,0.95]]           // az → çok (mavi)
+};
+function lerpC(ramp, t){
+  t = Math.max(0, Math.min(1, t));
+  const a = ramp[0], b = ramp[1];
+  return new THREE.Color(a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t, a[2]+(b[2]-a[2])*t);
+}
+const RED = new THREE.Color(0.85, 0.25, 0.22);
+const GRN = new THREE.Color(0.30, 0.80, 0.55);
+const AMB = new THREE.Color(1.00, 0.75, 0.38);
+
+const METRIC = {
+  none:   { title:'', color:function(){ return new THREE.Color(0xecead1); } },
+  floors: { title:'kat sayısı',
+    color:function(m, x){ return lerpC(RAMP.cool, x.maxF > 1 ? (m.floors-1)/(x.maxF-1) : 1); },
+    legend:function(x){ return [['1 kat', lerpC(RAMP.cool,0)], [x.maxF + ' kat', lerpC(RAMP.cool,1)]]; } },
+  gfa:    { title:'inşaat alanı',
+    color:function(m, x){ return lerpC(RAMP.cool, x.maxG ? m.gfa/x.maxG : 0); },
+    legend:function(x){ return [['0', lerpC(RAMP.cool,0)], [Math.round(x.maxG) + ' m²', lerpC(RAMP.cool,1)]]; } },
+  view:   { title:'deniz manzarası',
+    color:function(m){ return lerpC([[0.72,0.22,0.20],[0.30,0.80,0.55]], m.view); },
+    legend:function(){ return [['kapalı', new THREE.Color(0.72,0.22,0.20)],
+                               ['yarı',   new THREE.Color(0.51,0.51,0.38)],
+                               ['açık',   GRN]]; } },
+  sun:    { title:'güneşlenme',
+    color:function(m){ return lerpC([[0.22,0.28,0.38],[1.00,0.75,0.38]], m.sun); },
+    legend:function(){ return [['gölgede', new THREE.Color(0.22,0.28,0.38)], ['güneşte', AMB]]; } },
+  wind:   { title:'rüzgar maruziyeti',
+    color:function(m){
+      const s = isFinite(m.shelter);
+      return s ? new THREE.Color(0.30,0.70,0.62) : new THREE.Color(0.56,0.83,1.0);
+    },
+    legend:function(){ return [['korunaklı', new THREE.Color(0.30,0.70,0.62)],
+                               ['açık',      new THREE.Color(0.56,0.83,1.0)]]; } },
+  cut:    { title:'kazı / dolgu',
+    color:function(m, x){
+      const w = Math.max(m.cut, m.fill);
+      return lerpC([[0.30,0.80,0.55],[0.85,0.25,0.22]], x.maxC ? w/x.maxC : 0);
+    },
+    legend:function(x){ return [['oturuyor', GRN],
+                                ['± ' + x.maxC.toFixed(1) + ' m', RED]]; } }
+};
+
+function paintAnalysis(){
+  const M = state.masses || [];
+  const key = $('metric').value;
+  const seaLvl = +$('sea_lvl').value;
+
+  // site toplamları
+  const land = state.landArea || 0;
+  let gfa = 0, foot = 0, vol = 0, maxF = 1, maxG = 0, maxC = 0.001;
+  M.forEach(function(m){
+    gfa += m.gfa; foot += m.foot; vol += m.vol;
+    maxF = Math.max(maxF, m.floors); maxG = Math.max(maxG, m.gfa);
+    maxC = Math.max(maxC, m.cut, m.fill);
+  });
+  const x = { maxF:maxF, maxG:maxG, maxC:maxC };
+
+  $('totals').innerHTML =
+    cell('kara alanı', Math.round(land), 'm²') +
+    cell('inşaat alanı', Math.round(gfa), 'm²') +
+    cell('TAKS', land ? (foot/land).toFixed(3) : '—', '') +
+    cell('KAKS · emsal', land ? (gfa/land).toFixed(3) : '—', '');
+
+  // tablo
+  if (!M.length){
+    $('mtable').innerHTML = '<div class="mt"><div class="empty">kütle yok</div></div>';
+  } else {
+    let r = '<table class="mt"><tr><th>#</th><th>taban</th><th>kat</th><th>İA</th>' +
+            '<th>manzara</th><th>Z</th></tr>';
+    M.forEach(function(m){
+      const bad = m.seated && Math.max(m.cut, m.fill) > 0.6;
+      const zt = !m.seated
+        ? (m.zoff > 0 ? '↑' + m.zoff.toFixed(1) : '↓' + (-m.zoff).toFixed(1))
+        : (bad ? '±' + Math.max(m.cut, m.fill).toFixed(1) : '·');
+      r += '<tr data-i="' + m.idx + '"' + (m.idx === state.sel ? ' class="on"' : '') + '>' +
+           '<td>' + m.idx + '</td>' +
+           '<td>' + Math.round(m.foot) + '</td>' +
+           '<td>' + m.floors + '</td>' +
+           '<td>' + Math.round(m.gfa) + '</td>' +
+           '<td>' + Math.round(m.view * 100) + '%</td>' +
+           '<td' + (bad ? ' class="flag"' : '') + '>' + zt + '</td></tr>';
+    });
+    r += '</table>';
+    $('mtable').innerHTML = r;
+    Array.prototype.forEach.call($('mtable').querySelectorAll('tr[data-i]'), function(tr){
+      tr.addEventListener('click', function(){ select(+tr.dataset.i); paintAnalysis(); });
+    });
+  }
+
+  // kütle renkleri
+  M.forEach(function(m){
+    if (m.mesh) m.mesh.material.color.copy(METRIC[key].color(m, x));
+  });
+
+  // lejant
+  const lg = $('legend');
+  if (key === 'none' || !M.length){ lg.className = ''; }
+  else {
+    lg.className = 'on';
+    let s = '<h4>' + METRIC[key].title + '</h4>';
+    METRIC[key].legend(x).forEach(function(e){
+      s += '<div class="lr"><span class="lc" style="background:' +
+           '#' + e[1].getHexString() + '"></span>' + e[0] + '</div>';
+    });
+    lg.innerHTML = s;
+  }
+
+  // manzara yelpazesi — sadece o metrik seçiliyken
+  if (key === 'view'){
+    const ok = [], no = [];
+    M.forEach(function(m){
+      const o = [m.p[0], m.p[1], m.top + 0.5];
+      (m.fan || []).forEach(function(f){
+        (f.ok ? ok : no).push(o[0], o[1], o[2], f.e[0], f.e[1], f.e[2]);
+      });
+    });
+    const g = new THREE.Group();
+    if (ok.length){
+      const a = new THREE.BufferGeometry();
+      a.setAttribute('position', new THREE.BufferAttribute(new Float32Array(ok), 3));
+      g.add(new THREE.LineSegments(a, MAT.fanOk));
+    }
+    if (no.length){
+      const b = new THREE.BufferGeometry();
+      b.setAttribute('position', new THREE.BufferAttribute(new Float32Array(no), 3));
+      g.add(new THREE.LineSegments(b, MAT.fanNo));
+    }
+    swap('fan', g.children.length ? g : null);
+  } else swap('fan', null);
+}
+
+function cell(label, v, unit){
+  return '<div><span>' + label + '</span><b>' + v +
+         (unit ? ' <i>' + unit + '</i>' : '') + '</b></div>';
+}
+
+function paintReadout(zmin, zmax, seaLvl){
+  const land = zmax - seaLvl;
+  $('readout').innerHTML =
+    'arazi kotu <em>' + zmin.toFixed(1) + ' … ' + zmax.toFixed(1) + '</em><br>' +
+    'deniz <em>' + seaLvl.toFixed(1) + '</em> · kıyıdan tepe <em>+' + land.toFixed(1) + '</em><br>' +
+    'kütle <em>' + stats.box + '</em> · ağaç <em>' + stats.tree + '</em>' +
+    (stats.wrapped ? '<br><span class="w">' + stats.wrapped + ' indis wrap oldu</span>' : '') +
+    (stats.drowned ? '<br><span class="w">' + stats.drowned + ' kütle su altında</span>' : '');
+}
+
+function applyVis(){
+  const map = { srf:'v_srf', con:'v_con', shore:'v_con', sea:'v_sea',
+                box:'v_box', tree:'v_tree', pts:'v_pts', wind:'v_wind' };
+  Object.keys(map).forEach(function(k){
+    if (objs[k]) objs[k].visible = $(map[k]).checked;
+  });
+  if (objs.pick) objs.pick.visible = $('v_pts').checked;
+}
+
+/* ================= Nokta numaraları (2D overlay) ================= */
+
+const lab = $('labels'), lctx = lab.getContext('2d');
+const proj = new THREE.Vector3();
+function drawLabels(){
+  const w = lab.width, h = lab.height;
+  lctx.clearRect(0, 0, w, h);
+  const dpr = Math.min(window.devicePixelRatio, 2);
+  const showAll = $('v_num').checked;
+  const marked = (state.massIdx || []).concat(state.treeIdx || []);
+  if (!showAll && state.sel < 0 && !marked.length) return;
+
+  const list = showAll
+    ? state.moved.map(function(_, i){ return i; })
+    : marked.concat(state.sel >= 0 ? [state.sel] : []);
+
+  lctx.font = '600 ' + (10 * dpr) + 'px "IBM Plex Mono", monospace';
+  lctx.textAlign = 'center';
+  lctx.textBaseline = 'middle';
+
+  for (let n = 0; n < list.length; n++){
+    const i = list[n], p = state.moved[i];
+    if (!p) continue;
+    proj.set(p[0], p[1], p[2]).project(camera);
+    if (proj.z > 1 || proj.z < -1) continue;
+    const x = (proj.x * 0.5 + 0.5) * w, y = (-proj.y * 0.5 + 0.5) * h;
+    if (x < -30 || y < -20 || x > w + 30 || y > h + 20) continue;
+
+    const isSel = (i === state.sel);
+    const isMass = (state.massIdx || []).indexOf(i) >= 0;
+    const isTree = !isMass && (state.treeIdx || []).indexOf(i) >= 0;
+    const tag = isSel || isMass || isTree;
+    const txt = String(i);
+    const tw = lctx.measureText(txt).width;
+    const pad = 3 * dpr, bh = 13 * dpr;
+    const by = y - 13 * dpr;
+
+    lctx.fillStyle = isSel  ? 'rgba(255,192,97,.92)'
+                  : isMass  ? 'rgba(127,233,216,.86)'
+                  : isTree  ? 'rgba(77,180,120,.86)'
+                            : 'rgba(6,14,22,.6)';
+    lctx.fillRect(x - tw/2 - pad, by - bh/2, tw + pad*2, bh);
+    if (!tag){
+      lctx.strokeStyle = 'rgba(127,233,216,.22)';
+      lctx.lineWidth = 1;
+      lctx.strokeRect(x - tw/2 - pad, by - bh/2, tw + pad*2, bh);
+    }
+    lctx.fillStyle = tag ? '#06121a' : 'rgba(197,214,226,.9)';
+    lctx.fillText(txt, x, by);
+  }
+}
+
+function resize(){
+  const w = stage.clientWidth, h = stage.clientHeight;
+  if (!w || !h) return;
+  renderer.setSize(w, h, false);
+  const dpr = Math.min(window.devicePixelRatio, 2);
+  lab.width = w * dpr; lab.height = h * dpr;
+  lab.style.width = w + 'px'; lab.style.height = h + 'px';
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+window.addEventListener('resize', resize);
+
+/* ================= Olaylar ================= */
+
+const GEO = { sz:3, ex:0, dom:3, num:0, seed:0, smooth:2, uc:0, ci:1,
+              sea_dir:0, slope:1, sea_lvl:1, tree_h:1 };
+const LIVE = { sun_az:0, sun_alt:0, wind_dir:0 };
+
+Object.keys(GEO).forEach(function(id){
+  const el = $(id), out = $(id + '_v'), dp = GEO[id];
+  const show = function(){ out.textContent = (+el.value).toFixed(dp); };
+  show();
+  el.addEventListener('input', function(){ show(); schedule(); });
+});
+Object.keys(LIVE).forEach(function(id){
+  const el = $(id), out = $(id + '_v'), dp = LIVE[id];
+  const show = function(){ out.textContent = (+el.value).toFixed(dp); };
+  show();
+  el.addEventListener('input', function(){
+    show(); applySun(); analyze(); paintAnalysis();
+  });
+});
+$('fh').addEventListener('input', function(){
+  $('fh_v').textContent = (+this.value).toFixed(1);
+  analyze(); paintAnalysis();
+});
+$('metric').addEventListener('change', function(){ paintAnalysis(); applyVis(); });
+['idx','siz','mz'].forEach(function(id){
+  $(id).addEventListener('input', function(){
+    finishBoxes(state.moved, +$('sea_lvl').value);
+    analyze(); paintAnalysis(); applyVis();
+    if (state.sel >= 0) select(state.sel);
+  });
+});
+$('tree_idx').addEventListener('input', function(){
+  buildTrees(state.moved, +$('sea_lvl').value);
+  applyVis();
+});
+['v_srf','v_con','v_sea','v_box','v_tree','v_pts','v_wind'].forEach(function(id){
+  $(id).addEventListener('change', applyVis);
+});
+
+// nokta kotu
+$('dz').addEventListener('input', function(){
+  if (state.sel < 0) return;
+  const v = +this.value;
+  $('dz_v').textContent = v.toFixed(1);
+  state.edits.set(state.sel, v);
+  schedule(30);
+});
+$('clearpt').addEventListener('click', function(){
+  if (state.sel < 0) return;
+  state.edits.delete(state.sel);
+  $('dz').value = 0; $('dz_v').textContent = '0.0';
+  build();
+});
+$('clearall').addEventListener('click', function(){
+  state.edits.clear();
+  $('dz').value = 0; $('dz_v').textContent = '0.0';
+  build();
+});
+// seçili kütlenin Z ofseti — mz listesindeki kendi hanesini yazar
+$('mzs').addEventListener('input', function(){
+  const m = (state.masses || []).filter(function(q){ return q.idx === state.sel; })[0];
+  if (!m) return;
+  const v = +this.value;
+  $('mzs_v').textContent = v.toFixed(1);
+  const list = readNums($('mz').value);
+  while (list.length <= m.slot) list.push(list.length ? list[list.length-1] : '0');
+  list[m.slot] = v.toFixed(1);
+  $('mz').value = list.join(', ');
+  finishBoxes(state.moved, +$('sea_lvl').value);
+  analyze(); paintAnalysis(); applyVis();
+});
+
+$('addtree').addEventListener('click', function(){
+  if (state.sel < 0) return;
+  const el = $('tree_idx');
+  const cur = readNums(el.value).map(function(t){ return Math.round(parseFloat(t)); })
+                               .filter(function(v){ return isFinite(v); });
+  const at = cur.indexOf(state.sel);
+  if (at >= 0) cur.splice(at, 1); else cur.push(state.sel);
+  el.value = cur.join(', ');
+  buildTrees(state.moved, +$('sea_lvl').value);
+  applyVis();
+  this.textContent = at >= 0 ? 'Ağaç dik' : 'Ağacı kaldır';
+});
+
+$('addmass').addEventListener('click', function(){
+  if (state.sel < 0) return;
+  const el = $('idx');
+  const cur = readNums(el.value).map(function(t){ return Math.round(parseFloat(t)); });
+  const at = cur.indexOf(state.sel);
+  const sEl = $('siz'), zEl = $('mz');
+  const sizes = readNums(sEl.value), zs = readNums(zEl.value);
+  if (at >= 0){
+    cur.splice(at, 1);
+    if (sizes.length > at) sizes.splice(at, 1);
+    if (zs.length > at) zs.splice(at, 1);
+  } else {
+    cur.push(state.sel);
+    sizes.push(sizes.length ? sizes[sizes.length - 1] : '2');
+    zs.push('0');
+  }
+  sEl.value = sizes.join(', ');
+  zEl.value = zs.join(', ');
+  el.value = cur.join(', ');
+  finishBoxes(state.moved, +$('sea_lvl').value);
+  analyze(); paintAnalysis(); applyVis();
+  if (state.sel >= 0) select(state.sel);
+});
+window.addEventListener('keydown', function(e){
+  if (state.sel < 0) return;
+  if (e.target && /INPUT|TEXTAREA/.test(e.target.tagName)) return;
+  if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+  e.preventDefault();
+  const el = $('dz');
+  el.value = Math.max(-20, Math.min(20, (+el.value) + (e.key === 'ArrowUp' ? 0.25 : -0.25)));
+  el.dispatchEvent(new Event('input'));
+});
+$('reset').addEventListener('click', function(){
+  orbit.theta = HOME.theta; orbit.phi = HOME.phi;
+  orbit.dist = state.site * 2.2; orbit.target.set(0, 0, HOME.z);
+  applyCam();
+});
+
+/* ================= Çizim arayüzü ================= */
+
+function dwRows(){
+  const t = $('dw_type').value;
+  const isPlanish = (t === 'plan' || t === 'vaz');
+  $('dw_zrow').style.display   = (t === 'plan') ? 'flex' : 'none';
+  $('dw_posrow').style.display = (t === 'sec')  ? 'flex' : 'none';
+  $('dw_angrow').style.display = isPlanish ? 'none' : 'flex';
+  $('dw_mark').parentNode.style.display = isPlanish ? 'flex' : 'none';
+  $('dw_num').parentNode.style.display  = isPlanish ? 'flex' : 'none';
+  $('dw_spot').parentNode.style.display = (t === 'vaz') ? 'flex' : 'none';
+  $('dw_under').parentNode.style.display = isPlanish ? 'flex' : 'none';
+  $('dw_umode').closest('.pnl').style.display = isPlanish ? 'block' : 'none';
+  $('dw_uop').closest('.sl').style.display = isPlanish ? 'flex' : 'none';
+}
+
+function dwInfo(){
+  const paper = $('dw_paper').value, dpi = +$('dw_dpi').value;
+  const G = sheetGeom(paper);
+  const px = Math.round(G.W * dpi / 25.4), py = Math.round(G.H * dpi / 25.4);
+  $('dw_note').innerHTML = paper + ' yatay · <b>' + px + ' × ' + py + ' px</b> · ' +
+    (px*py/1e6).toFixed(1) + ' MP. Ölçek kağıda sığan en büyük standart değere ' +
+    'kendiliğinden oturur.';
+  return { paper:paper, dpi:dpi, px:px, py:py, G:G };
+}
+
+let sheetLast = null;
+function openSheet(){
+  const I = dwInfo();
+  // önizleme: ekrana sığacak çözünürlük
+  const wrapW = Math.min(window.innerWidth - 40, 1500);
+  const wrapH = window.innerHeight - 90;
+  const ppm = Math.min(wrapW / I.G.W, wrapH / I.G.H) * (window.devicePixelRatio > 1 ? 2 : 1.5);
+  const c = $('sheet_c');
+  c.width  = Math.round(I.G.W * ppm);
+  c.height = Math.round(I.G.H * ppm);
+  c.style.width  = Math.round(I.G.W * Math.min(wrapW / I.G.W, wrapH / I.G.H)) + 'px';
+  c.style.height = Math.round(I.G.H * Math.min(wrapW / I.G.W, wrapH / I.G.H)) + 'px';
+  const ctx = c.getContext('2d');
+  ctx.clearRect(0, 0, c.width, c.height);
+  const r = drawSheet(ctx, ppm, I.paper, I.dpi);
+  sheetLast = { r:r, I:I };
+  $('sheet_info').innerHTML = r.title + ' · ölçek <em>1:' + r.scale + '</em> · ' +
+    I.paper + ' · dışa aktarım <em>' + I.px + '×' + I.py + '</em> px @ ' + I.dpi + ' dpi';
+  $('sheet').classList.add('on');
+}
+
+$('dw_open').addEventListener('click', openSheet);
+$('sheet_close').addEventListener('click', function(){ $('sheet').classList.remove('on'); });
+$('sheet').addEventListener('click', function(e){
+  if (e.target === this) this.classList.remove('on');
+});
+window.addEventListener('keydown', function(e){
+  if (e.key === 'Escape') $('sheet').classList.remove('on');
+});
+
+$('sheet_dl').addEventListener('click', function(){
+  const I = dwInfo();
+  const btn = this, old = btn.textContent;
+  btn.textContent = 'çiziliyor…'; btn.disabled = true;
+  setTimeout(function(){
+    const c = document.createElement('canvas');
+    c.width = I.px; c.height = I.py;
+    const ctx = c.getContext('2d');
+    const r = drawSheet(ctx, I.dpi / 25.4, I.paper, I.dpi);
+    const name = 'GH_TOP_' + $('dw_type').value + '_1-' + r.scale + '_' +
+                 I.paper + '_' + I.dpi + 'dpi.png';
+    c.toBlob(function(blob){
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = name;
+      a.click();
+      setTimeout(function(){ URL.revokeObjectURL(a.href); }, 1000);
+      btn.textContent = old; btn.disabled = false;
+    }, 'image/png');
+  }, 30);
+});
+
+['dw_type','dw_paper','dw_dpi','dw_mode','dw_umode'].forEach(function(id){
+  $(id).addEventListener('change', function(){
+    dwRows(); dwInfo();
+    if ($('sheet').classList.contains('on')) openSheet();
+    drawSectionLine();
+  });
+});
+['dw_con','dw_lev','dw_tree','dw_lab','dw_num','dw_mark','dw_spot','dw_under'].forEach(function(id){
+  $(id).addEventListener('change', function(){
+    if ($('sheet').classList.contains('on')) openSheet();
+  });
+});
+['dw_z','dw_ang','dw_pos','dw_wash','dw_fade','dw_uop'].forEach(function(id){
+  $(id).addEventListener('input', function(){
+    $(id + '_v').textContent = (+this.value).toFixed(id === 'dw_ang' ? 0 : 2);
+    if (id === 'dw_z' || id === 'dw_ang' || id === 'dw_pos') drawSectionLine();
+    if ($('sheet').classList.contains('on')) openSheet();
+  });
+});
+
+// 3B görünümde kesit düzlemini göster
+function drawSectionLine(){
+  const t = $('dw_type').value;
+  if (t === 'plan' || t === 'vaz' || !state.site){ swap('secline', null); return; }
+  const ax = viewAxes(+$('dw_ang').value);
+  const half = state.site/2;
+  const pos = (t === 'elev') ? -half*1.45 : +$('dw_pos').value;
+  const c = [ax.n[0]*pos, ax.n[1]*pos], L = half*1.45;
+  const zTop = (state.zmax || 20) + 4, zBot = (state.zmin || -10) - 2;
+  const a = [c[0]-ax.r[0]*L, c[1]-ax.r[1]*L], b = [c[0]+ax.r[0]*L, c[1]+ax.r[1]*L];
+  const v = [];
+  // düzlem çerçevesi
+  v.push(a[0],a[1],zBot, a[0],a[1],zTop, a[0],a[1],zTop, b[0],b[1],zTop,
+         b[0],b[1],zTop, b[0],b[1],zBot, b[0],b[1],zBot, a[0],a[1],zBot);
+  // bakış okları
+  for (let i = -2; i <= 2; i++){
+    const p = [c[0]+ax.r[0]*(i*half*0.4), c[1]+ax.r[1]*(i*half*0.4)];
+    v.push(p[0],p[1],zTop, p[0]+ax.n[0]*half*0.16, p[1]+ax.n[1]*half*0.16, zTop);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(v), 3));
+  swap('secline', new THREE.LineSegments(g, MAT.secline));
+}
+
+dwRows(); dwInfo();
+
+/* ================= OBJ arayüzü ================= */
+
+function objInfo(){
+  const res = +$('obj_res').value, quad = $('obj_face').value === 'quad';
+  const W = res + 1;
+  let v = 0, f = 0;
+  if ($('obj_ter').checked){
+    v += W*W; f += res*res * (quad ? 1 : 2);
+    if ($('obj_solid').checked){
+      const ring = 4*res;
+      v += ring; f += ring * (quad ? 1 : 2) + (ring - 2);
+    }
+  }
+  if ($('obj_mass').checked) { const n = (state.masses||[]).length; v += n*8; f += n*6*(quad?1:2); }
+  if ($('obj_tree').checked) { const n = (state.treeIdx||[]).length; v += n*20; f += n*24; }
+  if ($('obj_sea').checked)  { v += 4; f += quad ? 1 : 2; }
+  const mb = (v*2*32 + f*46) / 1048576;
+  $('obj_note').innerHTML =
+    '≈ <b>' + v.toLocaleString('tr') + '</b> köşe · <b>' + f.toLocaleString('tr') + '</b> yüz · ' +
+    '≈ <b>' + mb.toFixed(1) + ' MB</b>. Arazi B-spline yüzeyden yeniden örnekleniyor — ' +
+    'ekrandaki ağdan bağımsız. Köşeler paylaşımlı, normaller komşu farklarından.' +
+    (res >= 200 ? ' <span style="color:var(--warn)">' + res + '² üretimi birkaç saniye ' +
+                  'sürer ve tarayıcı bu sırada donar.</span>' : '');
+  return { v:v, f:f };
+}
+
+['obj_res'].forEach(function(id){
+  $(id).addEventListener('input', function(){
+    $(id + '_v').textContent = this.value;
+    objInfo();
+  });
+});
+['obj_ter','obj_solid','obj_mass','obj_tree','obj_sea','obj_face','obj_axis','obj_unit']
+  .forEach(function(id){ $(id).addEventListener('change', objInfo); });
+
+$('obj_dl').addEventListener('click', function(){
+  if (!state.S){ return; }
+  const btn = this, old = btn.textContent;
+  btn.textContent = 'üretiliyor…'; btn.disabled = true;
+  setTimeout(function(){
+    const t0 = performance.now();
+    const o = buildOBJ();
+    const txtOut = o.L.join('\n') + '\n';
+    const blob = new Blob([txtOut], { type:'text/plain' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'GH_TOP_arazi_' + $('obj_res').value + '_' +
+                 $('obj_face').value + '_' + $('obj_axis').value + 'up.obj';
+    a.click();
+    setTimeout(function(){ URL.revokeObjectURL(a.href); }, 1000);
+    btn.textContent = old; btn.disabled = false;
+    $('obj_note').innerHTML = '<b>' + o.nv.toLocaleString('tr') + '</b> köşe · ' +
+      '<b>' + (blob.size/1048576).toFixed(1) + ' MB</b> · ' +
+      (performance.now()-t0|0) + ' ms\u0027de üretildi.';
+  }, 30);
+});
+
+objInfo();
+
+let pending = 0;
+function schedule(ms){ clearTimeout(pending); pending = setTimeout(build, ms || 70); }
+
+/* ================= Başlat ================= */
+
+resize();
+initWind();
+build();
+orbit.dist = state.site * 2.2;
+applyCam();
+drawDial();
+
+setTimeout(function(){ const t = $('tip'); if (t) t.style.opacity = 0; }, 7000);
+
+let last = performance.now();
+(function loop(now){
+  requestAnimationFrame(loop);
+  const dt = Math.min(0.05, ((now || performance.now()) - last) / 1000);
+  last = now || performance.now();
+  stepWind(dt);
+  renderer.render(scene, camera);
+  drawLabels();
+})();
+
+} catch (e){
+  fatal('Uygulama başlatılamadı',
+    'Beklenmeyen bir hata oluştu ve sayfa açılamadı. Aşağıdaki metni ' +
+    'olduğu gibi iletirseniz sebebi bulunabilir. Sık görülen sebep: ' +
+    'tarayıcıda <b>WebGL</b> kapalı veya donanım hızlandırma devre dışı.', e);
+}
+
+})();
+</script>
+</body>
+</html>
